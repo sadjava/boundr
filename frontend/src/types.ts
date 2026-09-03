@@ -1,0 +1,92 @@
+export type VideoStatus =
+  | "UPLOADING"
+  | "UPLOADED"
+  | "QUEUED"
+  | "PROCESSING"
+  | "COMPLETED"
+  | "FAILED";
+
+export type JobStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  created_at: string;
+}
+
+export interface Project {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  action_types: string[];
+  objects: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Job {
+  id: string;
+  video_id: string;
+  status: JobStatus;
+  created_at: string;
+  started_at: string | null;
+  updated_at: string;
+  error_msg: string | null;
+}
+
+export interface Video {
+  id: string;
+  project_id: string;
+  name: string;
+  s3_key: string;
+  status: VideoStatus;
+  duration: number | null;
+  created_at: string;
+  updated_at: string;
+  upload_url?: string | null;
+  playback_url?: string | null;
+  latest_job?: Job | null;
+  prev_video_id?: string | null;
+  next_video_id?: string | null;
+}
+
+export interface AnnotationSegment {
+  id: string;
+  start: number;
+  end: number;
+  action: string;
+  object: string | null;
+  keyframe: number;
+}
+
+export interface AnnotationData {
+  video_id: string;
+  duration: number;
+  fps?: number | null;
+  segments: AnnotationSegment[];
+}
+
+export interface Annotation {
+  id: string;
+  video_id: string;
+  s3_key: string | null;
+  data: AnnotationData;
+  version: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InferenceType {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export const INFERENCE_TYPES: InferenceType[] = [
+  { id: "overlap", name: "Overlap", description: "Concurrent actions that overlap in time" },
+  { id: "sequential", name: "Sequential", description: "Non-overlapping actions, one after another" },
+  { id: "dense", name: "Dense", description: "Shorter windows with more overlap" },
+];
