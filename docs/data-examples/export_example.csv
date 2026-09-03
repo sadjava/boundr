@@ -1,0 +1,6 @@
+video_id,segment_id,action,object,start,end,keyframe
+8f3c1a2e-4b7d-4c19-9a55-2e6b1f0d7c31,0f1a7c22-1d3e-4a90-8b11-5c2d9e4f6a01,open,drawer,0.0,1.868,0.934
+8f3c1a2e-4b7d-4c19-9a55-2e6b1f0d7c31,1b2c8d33-2e4f-4b01-9c22-6d3e0f5a7b12,take,knife,1.868,3.269,2.568
+8f3c1a2e-4b7d-4c19-9a55-2e6b1f0d7c31,2c3d9e44-3f50-4c12-8d33-7e4f1a6b8c23,close,drawer,3.269,6.072,4.67
+8f3c1a2e-4b7d-4c19-9a55-2e6b1f0d7c31,3d4e0f55-4061-4d23-9e44-8f5a2b7c9d34,put,knife,6.072,7.007,6.539
+8f3c1a2e-4b7d-4c19-9a55-2e6b1f0d7c31,4e5f1a66-5172-4e34-8f55-905b3c8d0e45,wash,tap,7.007,8.408,7.707
