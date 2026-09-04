@@ -183,6 +183,13 @@ them with real models is the point of the abstraction, not a departure from it.
 5. Extend the self-test at the bottom of that same `__init__.py` with assertions about
    the new pipeline's output.
 
+**Exception: `inference/pegasus/`.** The two TwelveLabs pipelines
+(`pegasus_analyze`, `pegasus_segment`) share one package instead of having one each.
+They differ only in the `response_format` they send and how they parse the reply;
+the SDK client, the prompt builder and the mapping to the annotation contract are
+shared. Splitting them would duplicate that code or push it to a third place.
+This is deliberate — do not "fix" it by splitting the package.
+
 ### The contract you must satisfy
 
 - **Never override `run()`.** The base class calls `ffprobe`, fills in `video_path`, and
@@ -322,6 +329,11 @@ Things that have already cost time here.
   `AnnotationStatus` in Python without a migration will fail at runtime, not at startup.
 - **No hot reload.** Both Python services run without `--reload`; restart the container
   after editing.
+- **Pegasus jobs block the consumer for minutes.** The consumer reads with `count=1`,
+  so videos are processed one at a time; the next job sits in `QUEUED` meanwhile.
+  `TIMEOUT` is a class attribute on each pipeline, not a setting.
+- **`TWELVELABS_API_KEY` is required for the Pegasus pipelines.** Without it a job
+  fails with an explicit message rather than a 401 from the API.
 
 ---
 

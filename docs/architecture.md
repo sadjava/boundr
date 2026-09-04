@@ -251,6 +251,23 @@ GET  /health
 
 Actual processing happens in the Redis consumer inside the same `ml-service` container.
 
+### Pegasus pipelines and external APIs
+
+The `pegasus_analyze` and `pegasus_segment` pipelines upload videos directly to the
+TwelveLabs API. The video file is downloaded from S3 locally first; a presigned URL
+from MinIO cannot be resolved by external services. The SDK is imported lazily so a
+broken or missing dependency does not crash the consumer at startup.
+
+Processing is sequential: the consumer reads Redis with `count=1`, so Pegasus jobs
+occupy the worker for minutes while the next video waits in `QUEUED`.
+
+**S3 key collision and recovery:** `annotation.json` has no pipeline name in its S3 key,
+so `pegasus_analyze` and `pegasus_segment` both write to the same object. The second
+pipeline to run overwrites the first in S3. However, the `inferences` table has a
+separate row for each `(video_id, pipeline)` pair, and the `annotations.data` column
+is stored independently per pipeline, so comparison between modes is not broken — only
+the S3 artifact reflects whichever pipeline ran last.
+
 ---
 
 ## ML Pipeline
