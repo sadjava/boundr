@@ -175,8 +175,14 @@ class TestWaitForTask:
         ]
         return client
 
-    def test_task_returns_ready_after_polling(self):
+    def test_task_returns_ready_after_polling(self, monkeypatch):
         """Poll through processing states until ready."""
+        sleep_calls = []
+        monkeypatch.setattr(
+            "app.inference.pegasus.client.time.sleep",
+            lambda duration: sleep_calls.append(duration),
+        )
+
         responses = [
             {"task_id": "t1", "status": "processing"},
             {"task_id": "t1", "status": "processing"},
@@ -186,6 +192,7 @@ class TestWaitForTask:
         result = _wait_for_task(client, "t1", timeout=30.0)
         assert result["status"] == "ready"
         assert client.analyze_async.tasks.retrieve.call_count == 3
+        assert len(sleep_calls) == 2  # Sleep between each processing response
 
     def test_task_failed_with_error_message(self):
         """Task failure includes API error message."""
@@ -203,8 +210,24 @@ class TestWaitForTask:
         assert "failed" in error_msg
         assert "API rate limit exceeded" in error_msg
 
-    def test_task_timeout_includes_last_status(self):
+    def test_task_timeout_includes_last_status(self, monkeypatch):
         """Timeout error names the last-seen status."""
+        sleep_calls = []
+        monkeypatch.setattr(
+            "app.inference.pegasus.client.time.sleep",
+            lambda duration: sleep_calls.append(duration),
+        )
+
+        # Mock time.time to advance on each call so timeout triggers
+        time_counter = [0.0]
+
+        def mock_time():
+            current = time_counter[0]
+            time_counter[0] += 0.06  # Advance by 60ms per call
+            return current
+
+        monkeypatch.setattr("app.inference.pegasus.client.time.time", mock_time)
+
         responses = [
             {"task_id": "t1", "status": "processing"},
             {"task_id": "t1", "status": "pending"},
@@ -217,7 +240,7 @@ class TestWaitForTask:
         assert "pending" in error_msg
 
     def test_ready_on_first_call_no_sleep(self, monkeypatch):
-        """Ready status on first retrieve returns immediately."""
+        """Ready status on first retrieve returns immediately without sleeping."""
         sleep_calls = []
         monkeypatch.setattr(
             "app.inference.pegasus.client.time.sleep",
@@ -228,10 +251,10 @@ class TestWaitForTask:
         client = self._make_fake_client(responses)
         result = _wait_for_task(client, "t1", timeout=30.0)
         assert result["status"] == "ready"
-        assert len(sleep_calls) == 0  # No sleep occurred
+        assert sleep_calls == []  # No sleep calls recorded
 
     def test_polling_sleeps_between_attempts(self, monkeypatch):
-        """Sleep happens between poll attempts."""
+        """Sleep with correct interval occurs between poll attempts."""
         from app.inference.pegasus.client import POLL_INTERVAL
 
         sleep_calls = []
@@ -246,5 +269,4 @@ class TestWaitForTask:
         ]
         client = self._make_fake_client(responses)
         _wait_for_task(client, "t1", timeout=30.0)
-        assert len(sleep_calls) == 1
-        assert sleep_calls[0] == POLL_INTERVAL
+        assert sleep_calls == [POLL_INTERVAL]
