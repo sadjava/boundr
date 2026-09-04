@@ -44,27 +44,64 @@ def test_parse_analyze_payload_rejects_unknown_shape():
         parse_analyze_payload({"nonsense": 1})
 
 
-def test_parse_segment_payload_accepts_single_group():
+def test_parse_segment_payload_accepts_definition_keyed_shape():
     payload = {
-        "id": "human_action",
-        "segments": [{"action_type": "grab", "object": "bottle", "start": 0.5, "end": 1.5}],
+        "human_action": [
+            {
+                "start_time": 0.5,
+                "end_time": 1.5,
+                "metadata": {"action_type": "grab", "object": "bottle"},
+            }
+        ]
     }
     assert parse_segment_payload(payload) == [
         {"action": "grab", "object": "bottle", "start": 0.5, "end": 1.5}
     ]
 
 
-def test_parse_segment_payload_accepts_list_of_groups():
-    group = {
-        "id": "human_action",
-        "segments": [{"action_type": "grab", "object": "bottle", "start": 0.5, "end": 1.5}],
+def test_parse_segment_payload_accepts_multiple_definition_keys():
+    entry = {
+        "start_time": 0.5,
+        "end_time": 1.5,
+        "metadata": {"action_type": "grab", "object": "bottle"},
     }
-    assert len(parse_segment_payload([group, group])) == 2
+    payload = {"human_action": [entry], "other_definition": [entry]}
+    assert len(parse_segment_payload(payload)) == 2
+
+
+def test_parse_segment_payload_skips_entry_with_missing_metadata():
+    payload = {
+        "human_action": [
+            {"start_time": 0.5, "end_time": 1.5},
+            {
+                "start_time": 2.0,
+                "end_time": 3.0,
+                "metadata": {"action_type": "push", "object": "cart"},
+            },
+        ]
+    }
+    assert parse_segment_payload(payload) == [
+        {"action": "push", "object": "cart", "start": 2.0, "end": 3.0}
+    ]
+
+
+def test_parse_segment_payload_skips_entry_with_non_dict_metadata():
+    payload = {
+        "human_action": [
+            {"start_time": 0.5, "end_time": 1.5, "metadata": "not a dict"},
+        ]
+    }
+    assert parse_segment_payload(payload) == []
 
 
 def test_parse_segment_payload_rejects_unknown_shape():
     with pytest.raises(ValueError):
         parse_segment_payload({"nonsense": 1})
+
+
+def test_parse_segment_payload_rejects_list():
+    with pytest.raises(ValueError):
+        parse_segment_payload([{"human_action": []}])
 
 
 def test_to_segments_produces_contract_fields():

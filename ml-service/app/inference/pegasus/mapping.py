@@ -27,7 +27,7 @@ def vocabulary_prompt(ctx: JobContext) -> str:
     return " ".join(parts)
 
 
-def parse_analyze_payload(payload: dict) -> list[dict]:
+def parse_analyze_payload(payload: dict | list) -> list[dict]:
     actions = payload.get("actions") if isinstance(payload, dict) else None
     if not isinstance(actions, list):
         keys = sorted(payload) if isinstance(payload, dict) else type(payload).__name__
@@ -44,27 +44,30 @@ def parse_analyze_payload(payload: dict) -> list[dict]:
     ]
 
 
-def parse_segment_payload(payload: dict | list) -> list[dict]:
-    groups = payload if isinstance(payload, list) else [payload]
-    seen_segments_key = False
+def parse_segment_payload(payload: dict) -> list[dict]:
+    """Parse a time_based_metadata payload: an object keyed by segment definition id,
+    each key mapping to an array of {start_time, end_time, metadata} objects."""
+    if not isinstance(payload, dict) or not all(
+        isinstance(v, list) for v in payload.values()
+    ):
+        raise ValueError(f"unexpected segment payload, expected dict of lists: {payload!r:.200}")
+
     raw: list[dict] = []
-    for group in groups:
-        if not isinstance(group, dict) or "segments" not in group:
-            continue
-        seen_segments_key = True
-        for seg in group.get("segments") or []:
+    for entries in payload.values():
+        for seg in entries:
             if not isinstance(seg, dict):
+                continue
+            metadata = seg.get("metadata")
+            if not isinstance(metadata, dict):
                 continue
             raw.append(
                 {
-                    "action": seg.get("action_type"),
-                    "object": seg.get("object"),
-                    "start": seg.get("start"),
-                    "end": seg.get("end"),
+                    "action": metadata.get("action_type"),
+                    "object": metadata.get("object"),
+                    "start": seg.get("start_time"),
+                    "end": seg.get("end_time"),
                 }
             )
-    if not seen_segments_key:
-        raise ValueError(f"unexpected segment payload, no 'segments' key: {payload!r:.200}")
     return raw
 
 
