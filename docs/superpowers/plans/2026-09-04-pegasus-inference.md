@@ -43,7 +43,8 @@
 её результат без него не проверить.
 
 **Files:**
-- Modify: `CLAUDE.md` (он же AGENTS.md — раздел «Testing»)
+- Modify: `AGENTS.md` (раздел «Testing»). `CLAUDE.md` — симлинк на него;
+  стейджить нужно `AGENTS.md`, иначе `git add` возьмёт ссылку, а не файл.
 - Modify: `ml-service/requirements.txt`
 - Create: `ml-service/tests/test_pegasus_mapping.py`
 - Create: `ml-service/app/inference/pegasus/__init__.py`
@@ -65,7 +66,7 @@
 Документация правится в том же изменении, что делает её верной, — поэтому раздел
 «Testing» обновляется здесь, вместе с появлением pytest, а не в конце плана.
 
-В `CLAUDE.md` в разделе «Testing» **дописать** после существующего описания
+В `AGENTS.md` в разделе «Testing» **дописать** после существующего описания
 `if __name__ == "__main__":` (ничего не удаляя и не переписывая):
 
 > New tests are written with pytest and live in `ml-service/tests/`. They run inside
@@ -356,7 +357,7 @@ Expected: обе команды печатают `ok`
 - [ ] **Step 9: Коммит**
 
 ```bash
-git add CLAUDE.md ml-service/requirements.txt \
+git add AGENTS.md ml-service/requirements.txt \
         ml-service/tests/test_pegasus_mapping.py \
         ml-service/app/inference/pegasus/__init__.py \
         ml-service/app/inference/pegasus/mapping.py
@@ -962,7 +963,7 @@ git commit -m "fix(ml-service): match the real TwelveLabs response shape"
 AGENTS.md требует обновлять документацию в том же изменении, которое делает её неверной.
 
 **Files:**
-- Modify: `CLAUDE.md` (он же AGENTS.md — разделы «Testing», «Adding an inference pipeline», «Gotchas»)
+- Modify: `AGENTS.md` (разделы «Adding an inference pipeline», «Gotchas»)
 - Modify: `README.md`
 - Modify: `docs/architecture.md`
 - Modify: `docs/project-overview.md` (§4–5)
@@ -1022,7 +1023,7 @@ Expected: PASS
 - [ ] **Step 6: Коммит**
 
 ```bash
-git add CLAUDE.md README.md docs/architecture.md docs/project-overview.md
+git add AGENTS.md README.md docs/architecture.md docs/project-overview.md
 git commit -m "docs: document the Pegasus pipelines and the TwelveLabs key"
 ```
 
