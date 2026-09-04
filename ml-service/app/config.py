@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     internal_api_token: str = "internal-secret"
     pipeline: str = "stub"
     database_url: str = "postgresql://boundr:boundr@localhost:5432/boundr"
+    twelvelabs_api_key: str = ""
 
 
 @lru_cache
