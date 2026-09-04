@@ -40,6 +40,16 @@
 Синхронный вариант `POST /analyze` не подходит: он поддерживает только
 `response_format.type = "json_schema"`, то есть режим segment через него недоступен.
 
+### SDK
+
+Обращаемся к платформе через официальный SDK `twelvelabs` (пакет
+`twelvelabs-io/twelvelabs-python`, версия 1.2.9), а не через ручные HTTP-запросы. Он
+покрывает нужные вызовы — `assets` и `analyze_async.tasks.create` с обоими форматами
+ответа — и снимает догадки о форме multipart-загрузки и структуре результата.
+
+Версию пиним: релиз 1.x несовместим с 0.4.x. В `ml-service/requirements.txt`
+добавляется `twelvelabs>=1.2.9,<2`.
+
 ### Получение ключа
 
 1. Регистрация на <https://playground.twelvelabs.io>.
@@ -116,12 +126,22 @@ def analyze(video_path: str, *, prompt: str, response_format: dict,
             analysis_mode: str, timeout: float, api_key: str) -> dict
 ```
 
-Выполняет три шага из §2 с интервалом поллинга 3 с. Кидает исключение при:
-пустом `api_key` (текст «TWELVELABS_API_KEY is not set» — чтобы причина была видна
-в UI, а не приходила как 401), файле свыше 200 МБ, статусе задачи `failed`, истечении
-таймаута, `finish_reason == "length"` (ответ обрезан — сегменты неполные).
+Тонкая обёртка над официальным SDK: создаёт клиент `TwelveLabs(api_key=...)`, загружает
+локальный файл как asset, ставит задачу анализа и дожидается результата. Ручной цикл
+поллинга не пишем — ожиданием занимается SDK; `timeout` остаётся ограничением сверху.
 
-Транспорт — `httpx`, он уже в `ml-service/requirements.txt`. Новых зависимостей нет.
+На выходе — обычный `dict` (через `model_dump()` типизированного ответа SDK), чтобы
+`mapping.py` оставался чистым и тестировался без SDK и без сети.
+
+Кидает исключение при: пустом `api_key` (текст «TWELVELABS_API_KEY is not set» — чтобы
+причина была видна в UI, а не приходила как 401), файле свыше 200 МБ, ошибке задачи,
+истечении таймаута, `finish_reason == "length"` (ответ обрезан — сегменты неполные).
+
+Проверку размера в 200 МБ делаем сами: это лимит платформы, SDK от него не защищает.
+
+Известная неопределённость: детальных примеров с `segment_definitions` в справочнике
+SDK нет. Точную сигнатуру вызова нужно уточнить по коду установленного пакета
+в контейнере — это первый шаг соответствующей задачи плана, а не догадка на бумаге.
 
 ### 4.2 analyze.py
 
@@ -172,6 +192,7 @@ def analyze(video_path: str, *, prompt: str, response_format: dict,
 
 | Файл | Изменение |
 |---|---|
+| `ml-service/requirements.txt` | `twelvelabs>=1.2.9,<2` |
 | `ml-service/app/inference/__init__.py` | два ключа в `PIPELINES` + self-test |
 | `ml-service/app/config.py` | `twelvelabs_api_key: str = ""` |
 | `backend/app/schemas.py` | две записи в `INFERENCE_TYPES` (строка 140) |
@@ -195,6 +216,7 @@ def analyze(video_path: str, *, prompt: str, response_format: dict,
 - словарь проекта попадает в текст промпта, при `None` промпт остаётся открытым.
 
 Сетевой вызов `client.py` не тестируется: он требует ключа и расходует квоту.
+По той же причине `mapping.py` не импортирует SDK.
 
 Запуск: `docker compose exec ml-service python -m app.inference` (команда уже есть
 в AGENTS.md).
