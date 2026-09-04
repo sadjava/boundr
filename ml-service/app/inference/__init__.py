@@ -9,6 +9,7 @@ from app.inference.base import (
 )
 from app.inference.dense import DenseInference
 from app.inference.overlap import OverlapInference
+from app.inference.pegasus import PegasusAnalyzeInference, PegasusSegmentInference
 from app.inference.sequential import SequentialInference
 
 PIPELINES: dict[str, type[Inference]] = {
@@ -17,6 +18,8 @@ PIPELINES: dict[str, type[Inference]] = {
     "": OverlapInference,
     "sequential": SequentialInference,
     "dense": DenseInference,
+    "pegasus_analyze": PegasusAnalyzeInference,
+    "pegasus_segment": PegasusSegmentInference,
 }
 
 
