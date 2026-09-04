@@ -4,7 +4,7 @@ function clamp(n: number, a: number, b: number) {
   return Math.min(b, Math.max(a, n));
 }
 
-type Kind = "start" | "end" | "draw" | "keyframe";
+type Kind = "start" | "end" | "draw" | "keyframe" | "move" | "seek";
 
 interface Props {
   min?: number;
@@ -75,6 +75,10 @@ export default function RangeSlider({
     let ns = startRef.current;
     let ne = endRef.current;
     let nkf = kfRef.current;
+    if (kind === "seek") {
+      onSeek?.(raw);
+      return;
+    }
     if (kind === "start") {
       ns = clamp(raw, min, ne - gap);
       nkf = clamp(nkf, ns, ne);
@@ -86,6 +90,22 @@ export default function RangeSlider({
     } else if (kind === "keyframe") {
       nkf = clamp(raw, ns, ne);
       onSeek?.(nkf);
+    } else if (kind === "move") {
+      const d = drag.current;
+      if (!d) return;
+      const len = d.end - d.start;
+      ns = d.start + (raw - d.origin);
+      ne = ns + len;
+      if (ns < min) {
+        ns = min;
+        ne = min + len;
+      }
+      if (ne > max) {
+        ne = max;
+        ns = max - len;
+      }
+      nkf = clamp(d.keyframe + (ns - d.start), ns, ne);
+      onSeek?.(raw);
     } else {
       const origin = drag.current?.origin ?? raw;
       ns = clamp(Math.min(origin, raw), min, max);
@@ -137,7 +157,7 @@ export default function RangeSlider({
             kfRef.current = mid;
             onChange(ns, ne, mid);
           }
-        } else if (d) {
+        } else if (d && d.kind !== "seek") {
           onChange(startRef.current, endRef.current, kfRef.current);
         }
         setLive(null);
@@ -164,17 +184,9 @@ export default function RangeSlider({
       style={{
         background: "var(--color-raised)",
         outline: selected ? "2px solid var(--color-accent)" : "1px solid var(--color-line)",
-        cursor: empty || drawing ? "crosshair" : "pointer",
+        cursor: empty || drawing ? "crosshair" : "ew-resize",
       }}
-      {...(empty || drawing
-        ? bind("draw")
-        : {
-            onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
-              if (e.target !== trackRef.current) return;
-              onSelect?.();
-              onSeek?.(clientToValue(e.clientX));
-            },
-          })}
+      {...(empty || drawing ? bind("draw") : bind("seek"))}
     >
       {empty ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] text-[var(--color-tertiary)]">
@@ -182,13 +194,14 @@ export default function RangeSlider({
         </div>
       ) : (
         <div
-          className="pointer-events-none absolute top-0.5 bottom-0.5 z-0 rounded-[3px]"
+          className="absolute top-0.5 bottom-0.5 z-0 cursor-grab rounded-[3px] active:cursor-grabbing"
           style={{
             left: `${left}%`,
             width: `${width}%`,
             background: `${color}${selected ? "B3" : "66"}`,
             border: `1.5px solid ${color}`,
           }}
+          {...bind("move")}
         />
       )}
       {showHandles && (

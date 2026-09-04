@@ -16,4 +16,6 @@ class DenseInference(Inference):
     ]
 
     def infer(self, meta: VideoMeta, ctx: JobContext) -> list[dict]:
+        # action_types, objects = ctx.action_types, ctx.objects  # None = open vocab
+        # extract_frames(ctx.video_path, dest_dir, fps=1) → jpeg paths
         return mock_segments(self.WINDOWS, meta.duration, ctx)

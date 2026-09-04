@@ -4,7 +4,6 @@ import json
 import os
 import random
 import subprocess
-import tempfile
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -19,8 +18,28 @@ class JobContext:
     video_id: str
     s3_key: str
     project_id: str = ""
+    # None = open vocabulary (primary); list = restrict to these labels
     action_types: list[str] | None = None
     objects: list[str] | None = None
+    video_path: str = ""
+
+
+def extract_frames(video_path: str, dest_dir: str, *, fps: float = 1.0) -> list[str]:
+    """Decode the local mp4 at `video_path` into jpegs. Returns sorted frame paths."""
+    if fps <= 0:
+        raise ValueError("fps must be > 0")
+    os.makedirs(dest_dir, exist_ok=True)
+    pattern = os.path.join(dest_dir, "frame_%06d.jpg")
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", video_path, "-vf", f"fps={fps}", "-q:v", "2", pattern],
+        capture_output=True,
+        check=True,
+    )
+    return sorted(
+        os.path.join(dest_dir, name)
+        for name in os.listdir(dest_dir)
+        if name.startswith("frame_") and name.endswith(".jpg")
+    )
 
 
 @dataclass
@@ -57,37 +76,15 @@ def ffprobe_meta(video_path: str) -> VideoMeta:
     return VideoMeta(duration=duration, fps=fps)
 
 
-def smoke_extract_frame(video_path: str) -> None:
-    fd, out = tempfile.mkstemp(suffix=".jpg", prefix="vtas-frame-")
-    os.close(fd)
-    try:
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                "0",
-                "-i",
-                video_path,
-                "-frames:v",
-                "1",
-                out,
-            ],
-            capture_output=True,
-            check=True,
-        )
-    finally:
-        if os.path.exists(out):
-            os.remove(out)
-
-
 def pick_action(ctx: JobContext, i: int) -> str:
-    pool = [a for a in (ctx.action_types or []) if a] or MOCK_ACTIONS
+    # None / empty = open vocab → mock pool
+    pool = ctx.action_types or MOCK_ACTIONS
     return pool[i % len(pool)]
 
 
 def pick_object(ctx: JobContext) -> str:
-    pool = [o for o in (ctx.objects or []) if o] or MOCK_OBJECTS
+    # None / empty = open vocab → mock pool
+    pool = ctx.objects or MOCK_OBJECTS
     return random.choice(pool)
 
 
@@ -118,8 +115,8 @@ class Inference(ABC):
     version: int = 1
 
     def run(self, video_path: str, ctx: JobContext) -> dict:
+        ctx.video_path = video_path
         meta = ffprobe_meta(video_path)
-        smoke_extract_frame(video_path)
         return {
             "video_id": ctx.video_id,
             "duration": meta.duration,
@@ -129,4 +126,13 @@ class Inference(ABC):
 
     @abstractmethod
     def infer(self, meta: VideoMeta, ctx: JobContext) -> list[dict]:
-        """Replace this in each inference type folder."""
+        """Return annotation segments.
+
+        Catalogs (None = open vocabulary, primary case):
+            action_types = ctx.action_types
+            objects = ctx.objects
+        Local video (already downloaded from S3):
+            ctx.video_path
+        Frames:
+            frames = extract_frames(ctx.video_path, dest_dir, fps=1.0)
+        """

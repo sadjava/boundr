@@ -205,23 +205,19 @@ button {
 }
 
 .video-well {
-  display: flex;
+  container-type: size;
+  display: grid;
   min-height: 0;
   flex: 1;
-  align-items: center;
-  justify-content: center;
+  place-items: center;
   padding: 0.85rem 1.1rem;
-  background: var(--color-canvas);
+  background: var(--color-panel);
 }
 
 .video-stage {
-  display: flex;
-  height: 100%;
-  max-height: 100%;
-  width: 100%;
-  max-width: 100%;
-  align-items: center;
-  justify-content: center;
+  --ar: var(--video-ar, 1.777);
+  width: min(100cqw, calc(100cqh * var(--ar)));
+  height: min(100cqh, calc(100cqw / var(--ar)));
   overflow: hidden;
   border-radius: 4px;
   border: 1px solid color-mix(in srgb, var(--color-line) 50%, #2b1512);
@@ -230,9 +226,38 @@ button {
 }
 
 .video-frame {
+  display: block;
   height: 100%;
   width: 100%;
   object-fit: contain;
+}
+
+.tl-grip {
+  flex-shrink: 0;
+  width: 0.7rem;
+  height: 1.1rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: grab;
+  background-image: radial-gradient(circle, var(--color-tertiary) 1.1px, transparent 1.2px);
+  background-size: 4px 4px;
+  background-position: center;
+  background-color: transparent;
+}
+
+.tl-grip:active {
+  cursor: grabbing;
+}
+
+.tl-ghost {
+  pointer-events: none;
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  filter: drop-shadow(0 6px 12px rgb(84 26 26 / 0.28));
 }
 
 .tl-split {

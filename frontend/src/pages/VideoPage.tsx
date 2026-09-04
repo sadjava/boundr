@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { activeSegmentId } from "../activeSegment";
 import { api, downloadExport } from "../api";
@@ -38,19 +38,11 @@ function newSegment(): AnnotationSegment {
 }
 
 const TIMELINE_H_MIN = 168;
-const TIMELINE_H_MAX = 440;
-const TIMELINE_H_DEFAULT = 248;
 const VIDEO_H_MIN = 160;
-const TL_H_KEY = "boundr-timeline-h";
 
 function clampTimelineH(h: number, colH?: number) {
-  const max = colH ? Math.min(TIMELINE_H_MAX, Math.max(TIMELINE_H_MIN, colH - VIDEO_H_MIN)) : TIMELINE_H_MAX;
-  return Math.min(max, Math.max(TIMELINE_H_MIN, h));
-}
-
-function readTimelineH() {
-  const n = Number(localStorage.getItem(TL_H_KEY));
-  return Number.isFinite(n) ? clampTimelineH(n) : TIMELINE_H_DEFAULT;
+  const cap = colH && colH > 0 ? Math.max(TIMELINE_H_MIN, colH - VIDEO_H_MIN) : 440;
+  return Math.min(cap, Math.max(TIMELINE_H_MIN, h));
 }
 
 export default function VideoPage() {
@@ -58,14 +50,16 @@ export default function VideoPage() {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
-  const tlHRef = useRef(TIMELINE_H_DEFAULT);
-  const [tlH, setTlH] = useState(readTimelineH);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const tlHRef = useRef<number | null>(null);
+  const [tlH, setTlH] = useState<number | null>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [annotation, setAnnotation] = useState<Annotation | null>(null);
   const [data, setData] = useState<AnnotationData | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [mediaDuration, setMediaDuration] = useState(0);
+  const [videoAR, setVideoAR] = useState(16 / 9);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -79,9 +73,11 @@ export default function VideoPage() {
   const [deleting, setDeleting] = useState(false);
   const [actionTypes, setActionTypes] = useState<string[]>([]);
   const [objectLabels, setObjectLabels] = useState<string[]>([]);
+  const currentTimeRef = useRef(0);
   dataRef.current = data;
   selectedIdRef.current = selectedId;
   tlHRef.current = tlH;
+  currentTimeRef.current = currentTime;
 
   const duration = mediaDuration || data?.duration || video?.duration || 0;
 
@@ -116,7 +112,9 @@ export default function VideoPage() {
     setSelectedId(null);
     setCurrentTime(0);
     setMediaDuration(0);
+    setVideoAR(16 / 9);
     setError(null);
+    setTlH(null);
     loadVideo().catch((e) => setError(e.message));
   }, [loadVideo]);
 
@@ -126,6 +124,63 @@ export default function VideoPage() {
       .then(setInference)
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input, textarea, select, [contenteditable]")) return;
+      if (el?.closest("video")) return;
+      if (confirmDelete) return;
+      if (e.key === " " || e.code === "Space") {
+        if (el?.closest("button, a")) return;
+        e.preventDefault();
+        const v = videoRef.current;
+        if (!v) return;
+        if (v.paused) void v.play();
+        else v.pause();
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : 0.1;
+        const dir = e.key === "ArrowLeft" ? -1 : 1;
+        videoRef.current?.pause();
+        seek(currentTimeRef.current + dir * step);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          const segs = dataRef.current?.segments;
+          const id = selectedIdRef.current;
+          if (id && segs) {
+            const i = segs.findIndex((s) => s.id === id);
+            if (i > 0) reorder(id, i - 1);
+          }
+        } else selectAdjacent(-1);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          const segs = dataRef.current?.segments;
+          const id = selectedIdRef.current;
+          if (id && segs) {
+            const i = segs.findIndex((s) => s.id === id);
+            if (i >= 0 && i < segs.length - 1) reorder(id, i + 1);
+          }
+        } else selectAdjacent(1);
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        const id = selectedIdRef.current;
+        if (id) removeSegment(id);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmDelete, mediaDuration]);
 
   useEffect(() => {
     if (!video) return;
@@ -164,10 +219,33 @@ export default function VideoPage() {
   }
 
   function removeSegment(sid: string) {
-    if (!data) return;
-    const next = data.segments.filter((s) => s.id !== sid);
-    setData({ ...data, segments: next });
+    const cur = dataRef.current;
+    if (!cur) return;
+    const next = cur.segments.filter((s) => s.id !== sid);
+    setData({ ...cur, segments: next });
     setSelectedId((prev) => (prev === sid ? (next[0]?.id ?? null) : prev));
+  }
+
+  function reorder(fromId: string, toIndex: number) {
+    const cur = dataRef.current;
+    if (!cur) return;
+    const from = cur.segments.findIndex((s) => s.id === fromId);
+    if (from < 0) return;
+    const next = cur.segments.slice();
+    const [item] = next.splice(from, 1);
+    const to = Math.min(Math.max(0, toIndex), next.length);
+    if (to === from) return;
+    next.splice(to, 0, item);
+    setData({ ...cur, segments: next });
+  }
+
+  function selectAdjacent(dir: -1 | 1) {
+    const segs = dataRef.current?.segments;
+    if (!segs?.length) return;
+    const i = segs.findIndex((s) => s.id === selectedIdRef.current);
+    const j = i < 0 ? 0 : Math.min(segs.length - 1, Math.max(0, i + dir));
+    setSelectedId(segs[j].id);
+    if (segs[j].end - segs[j].start >= 0.05) seek(segs[j].start);
   }
 
   async function save() {
@@ -205,8 +283,8 @@ export default function VideoPage() {
     if (e.button !== 0) return;
     e.preventDefault();
     const startY = e.clientY;
-    const startH = tlH;
-    const max = clampTimelineH(TIMELINE_H_MAX, sectionRef.current?.clientHeight);
+    const startH = panelRef.current?.offsetHeight ?? TIMELINE_H_MIN;
+    const max = clampTimelineH(Number.POSITIVE_INFINITY, sectionRef.current?.clientHeight);
     const move = (ev: PointerEvent) => {
       const next = clampTimelineH(startH + (startY - ev.clientY), sectionRef.current?.clientHeight);
       setTlH(Math.min(max, next));
@@ -214,31 +292,32 @@ export default function VideoPage() {
     const up = () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
-      localStorage.setItem(TL_H_KEY, String(tlHRef.current));
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
   }
 
   function seek(t: number) {
+    const cap = mediaDuration || dataRef.current?.duration || videoRef.current?.duration || 0;
+    t = cap > 0 ? Math.min(cap, Math.max(0, t)) : Math.max(0, t);
+    currentTimeRef.current = t;
     setCurrentTime(t);
     const el = videoRef.current;
     if (!el || el.readyState < 1) return;
-    if (el.seeking) {
-      pendingSeekRef.current = t;
-      return;
-    }
-    pendingSeekRef.current = null;
-    if (Math.abs(el.currentTime - t) < 0.001) return;
-    el.currentTime = t;
+    pendingSeekRef.current = t;
+    if (!el.seeking) el.currentTime = t;
   }
 
   function onSeeked() {
     const el = videoRef.current;
+    if (!el) return;
     const t = pendingSeekRef.current;
+    if (t == null) return;
+    if (Math.abs(el.currentTime - t) >= 0.001) {
+      el.currentTime = t;
+      return;
+    }
     pendingSeekRef.current = null;
-    if (!el || t == null || Math.abs(el.currentTime - t) < 0.001) return;
-    el.currentTime = t;
   }
 
   async function removeVideo() {
@@ -321,7 +400,7 @@ export default function VideoPage() {
         <section ref={sectionRef} className="flex min-h-0 min-w-0 flex-col">
           <div className="video-well">
             {video.playback_url ? (
-              <div className="video-stage">
+              <div className="video-stage" style={{ "--video-ar": videoAR } as CSSProperties}>
                 <video
                   ref={videoRef}
                   src={video.playback_url}
@@ -330,15 +409,18 @@ export default function VideoPage() {
                   preload="auto"
                   className="video-frame"
                   onLoadedMetadata={(e) => {
-                    const d = e.currentTarget.duration || 0;
+                    const v = e.currentTarget;
+                    const d = v.duration || 0;
                     setMediaDuration(d);
+                    if (v.videoWidth && v.videoHeight) setVideoAR(v.videoWidth / v.videoHeight);
                     setData((prev) => prev ?? emptyData(video.id, d));
                   }}
                   onSeeked={onSeeked}
                   onTimeUpdate={(e) => {
-                    if (draggingRef.current) return;
+                    if (draggingRef.current || pendingSeekRef.current != null) return;
                     const el = e.currentTarget;
                     const t = el.currentTime;
+                    currentTimeRef.current = t;
                     setCurrentTime(t);
                     if (el.paused) return;
                     const segs = dataRef.current?.segments;
@@ -353,8 +435,13 @@ export default function VideoPage() {
             )}
           </div>
           <div
+            ref={panelRef}
             className="relative flex shrink-0 flex-col overflow-hidden border-t border-[var(--color-line)] bg-[var(--color-panel)]"
-            style={{ height: tlH }}
+            style={
+              tlH !== null
+                ? { height: tlH }
+                : { maxHeight: `calc(100% - ${VIDEO_H_MIN}px)` }
+            }
           >
             <button
               type="button"
@@ -382,6 +469,7 @@ export default function VideoPage() {
                     onSeek={seek}
                     onAdd={addSegment}
                     onRemove={removeSegment}
+                    onReorder={reorder}
                     onMeta={(sid, patch) => updateSegment(sid, patch)}
                     onDragStart={() => {
                       draggingRef.current = true;
@@ -390,9 +478,9 @@ export default function VideoPage() {
                     onDragEnd={() => {
                       draggingRef.current = false;
                       const el = videoRef.current;
-                      const t = pendingSeekRef.current;
-                      pendingSeekRef.current = null;
-                      if (el && t != null && !el.seeking) el.currentTime = t;
+                      const t = currentTimeRef.current;
+                      pendingSeekRef.current = t;
+                      if (el && el.readyState >= 1 && !el.seeking) el.currentTime = t;
                     }}
                     onChange={(sid, start, end, keyframe) =>
                       updateSegment(sid, { start, end, keyframe })

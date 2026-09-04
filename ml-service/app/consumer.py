@@ -38,13 +38,13 @@ def _process_message(fields: dict[str, str]) -> None:
     video_id = fields["video_id"]
     s3_key = fields["s3_key"]
     project_id = fields.get("project_id") or ""
-    actions, objects = project_catalog(project_id)
+    action_types, objects = project_catalog(project_id)
     ctx = JobContext(
         job_id=job_id,
         video_id=video_id,
         s3_key=s3_key,
         project_id=project_id,
-        action_types=actions,
+        action_types=action_types,
         objects=objects,
     )
     tmp_path = None

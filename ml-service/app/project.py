@@ -21,9 +21,10 @@ def _as_list(value) -> list[str]:
     return [str(item).strip() for item in (raw or []) if str(item).strip()]
 
 
-def project_catalog(project_id: str) -> tuple[list[str], list[str]]:
+def project_catalog(project_id: str) -> tuple[list[str] | None, list[str] | None]:
+    """Return (action_types, objects). None means open vocabulary."""
     if not project_id:
-        return [], []
+        return None, None
     try:
         import psycopg
 
@@ -34,7 +35,9 @@ def project_catalog(project_id: str) -> tuple[list[str], list[str]]:
             ).fetchone()
     except Exception:
         logger.exception("Failed to load project %s catalogs from postgres", project_id)
-        return [], []
+        return None, None
     if not row:
-        return [], []
-    return _as_list(row[0]), _as_list(row[1])
+        return None, None
+    action_types = _as_list(row[0]) or None
+    objects = _as_list(row[1]) or None
+    return action_types, objects
