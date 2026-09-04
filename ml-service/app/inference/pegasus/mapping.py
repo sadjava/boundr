@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from app.inference.base import JobContext, make_segment
 
 OPEN_ACTION_HINT = (
@@ -75,6 +77,12 @@ def to_segments(raw: list[dict], duration: float) -> list[dict]:
             end = float(item.get("end"))
         except (TypeError, ValueError):
             continue
+        if not (math.isfinite(start) and math.isfinite(end)):
+            continue
+        # Only clamp to duration if it is known (> 0). When ffprobe cannot read
+        # the duration from the container, it falls back to 0, and clamping to 0
+        # would discard all segments, raising here. With unknown duration there
+        # is no upper bound to clamp against.
         if duration > 0:
             start = min(start, duration)
             end = min(end, duration)

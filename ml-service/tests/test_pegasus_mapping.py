@@ -95,6 +95,13 @@ def test_to_segments_clips_to_duration():
     assert seg["end"] == 10.0
 
 
+def test_to_segments_skips_clamping_when_duration_unknown():
+    raw = [{"action": "a", "object": "", "start": 1.0, "end": 99.0}]
+    seg = to_segments(raw, duration=0.0)[0]
+    assert seg["start"] == 1.0
+    assert seg["end"] == 99.0
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -102,6 +109,9 @@ def test_to_segments_clips_to_duration():
         {"action": "zero", "object": "", "start": 3.0, "end": 3.0},
         {"action": "", "object": "x", "start": 6.0, "end": 7.0},
         {"action": "bad_number", "object": "", "start": "x", "end": 8.0},
+        {"action": "nan_start", "object": "", "start": float("nan"), "end": 5.0},
+        {"action": "nan_end", "object": "", "start": 1.0, "end": float("nan")},
+        {"action": "inf_end", "object": "", "start": 1.0, "end": float("inf")},
     ],
 )
 def test_to_segments_drops_unusable_records(bad):
