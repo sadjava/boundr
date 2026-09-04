@@ -153,6 +153,16 @@ INFERENCE_TYPES = [
         "name": "Dense",
         "description": "Shorter windows with more overlap",
     },
+    {
+        "id": "pegasus_analyze",
+        "name": "Pegasus (analyze)",
+        "description": "TwelveLabs Pegasus, free-form actions via a JSON schema",
+    },
+    {
+        "id": "pegasus_segment",
+        "name": "Pegasus (segment)",
+        "description": "TwelveLabs Pegasus, time-based segmentation of actions",
+    },
 ]
 
 
