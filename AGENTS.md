@@ -185,10 +185,11 @@ them with real models is the point of the abstraction, not a departure from it.
 
 **Exception: `inference/pegasus/`.** The two TwelveLabs pipelines
 (`pegasus_analyze`, `pegasus_segment`) share one package instead of having one each.
-They differ only in the `response_format` they send and how they parse the reply;
-the SDK client, the prompt builder and the mapping to the annotation contract are
-shared. Splitting them would duplicate that code or push it to a third place.
-This is deliberate — do not "fix" it by splitting the package.
+They differ in the `response_format` they send, the `analysis_mode` they request, how
+they parse the reply, and the prompt text; the SDK client, the prompt builder and
+the mapping to the annotation contract are shared. Splitting them would duplicate
+that code or push it to a third place. This is deliberate — do not "fix" it by
+splitting the package.
 
 ### The contract you must satisfy
 

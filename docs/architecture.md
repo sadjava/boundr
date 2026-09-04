@@ -255,18 +255,20 @@ Actual processing happens in the Redis consumer inside the same `ml-service` con
 
 The `pegasus_analyze` and `pegasus_segment` pipelines upload videos directly to the
 TwelveLabs API. The video file is downloaded from S3 locally first; a presigned URL
-from MinIO cannot be resolved by external services. The SDK is imported lazily so a
-broken or missing dependency does not crash the consumer at startup.
+from MinIO (with the default `S3_PUBLIC_ENDPOINT=http://localhost:9000`) cannot be
+resolved by external services. The SDK is imported lazily so a broken or missing
+dependency does not crash the consumer at startup.
 
 Processing is sequential: the consumer reads Redis with `count=1`, so Pegasus jobs
 occupy the worker for minutes while the next video waits in `QUEUED`.
 
-**S3 key collision and recovery:** `annotation.json` has no pipeline name in its S3 key,
-so `pegasus_analyze` and `pegasus_segment` both write to the same object. The second
-pipeline to run overwrites the first in S3. However, the `inferences` table has a
-separate row for each `(video_id, pipeline)` pair, and the `annotations.data` column
-is stored independently per pipeline, so comparison between modes is not broken — only
-the S3 artifact reflects whichever pipeline ran last.
+**S3 key collision:** `annotation.json` has no pipeline name in its S3 key, so
+`pegasus_analyze` and `pegasus_segment` both write to the same object. When the
+second pipeline to run completes, it overwrites the first in S3 AND overwrites the
+working annotation in the database (destroying any user edits via `upsert_working_annotation`).
+The `inferences` table does preserve separate rows for each `(video_id, pipeline)` pair,
+so the raw model results are kept per pipeline — only the shared working annotation
+is lost.
 
 ---
 

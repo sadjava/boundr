@@ -167,9 +167,9 @@ Copy `.env.example` to `.env`. The defaults work out of the box for local develo
 change `JWT_SECRET` and `INTERNAL_API_TOKEN` before exposing anything.
 
 The `pegasus_analyze` and `pegasus_segment` pipelines require a TwelveLabs API key.
-Register at https://playground.twelvelabs.io, copy the key (format: `tlk_...`) from
-Dashboard → API Key, and set it in `.env` as `TWELVELABS_API_KEY`. Without the key,
-Pegasus jobs will fail with an explicit message, but other pipelines work normally.
+Register at https://playground.twelvelabs.io, copy the key from Dashboard → API Key,
+and set it in `.env` as `TWELVELABS_API_KEY`. Without the key, Pegasus jobs will fail
+with an explicit message, but other pipelines work normally.
 
 ---
 
