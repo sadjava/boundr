@@ -43,6 +43,7 @@
 её результат без него не проверить.
 
 **Files:**
+- Modify: `CLAUDE.md` (он же AGENTS.md — раздел «Testing»)
 - Modify: `ml-service/requirements.txt`
 - Create: `ml-service/tests/test_pegasus_mapping.py`
 - Create: `ml-service/app/inference/pegasus/__init__.py`
@@ -59,7 +60,29 @@
     `{"action": ..., "object": ..., "start": ..., "end": ...}`, которые затем
     передаются в `to_segments`.
 
-- [ ] **Step 1: Добавить pytest и пересобрать образ**
+- [ ] **Step 1: Записать конвенцию тестов в AGENTS.md**
+
+Документация правится в том же изменении, что делает её верной, — поэтому раздел
+«Testing» обновляется здесь, вместе с появлением pytest, а не в конце плана.
+
+В `CLAUDE.md` в разделе «Testing» **дописать** после существующего описания
+`if __name__ == "__main__":` (ничего не удаляя и не переписывая):
+
+> New tests are written with pytest and live in `ml-service/tests/`. They run inside
+> the container from `/app`, so the `app` package is importable without a
+> `conftest.py`:
+>
+> ```bash
+> docker compose exec ml-service python -m pytest tests/ -q
+> ```
+>
+> The two conventions coexist deliberately: existing `__main__` self-tests stay where
+> they are, new tests go to `tests/`. Note that the listed
+> `docker compose exec ml-service python -m app.inference` does **not** run —
+> `app/inference/` is a package without a `__main__.py`, so the block at the bottom of
+> its `__init__.py` is unreachable and its assertions are not covered anywhere.
+
+- [ ] **Step 2: Добавить pytest и пересобрать образ**
 
 Дописать в конец `ml-service/requirements.txt`:
 
@@ -75,7 +98,7 @@ docker compose exec ml-service python -m pytest --version
 ```
 Expected: печатает версию pytest 8.x
 
-- [ ] **Step 2: Создать пустой `__init__.py` пакета**
+- [ ] **Step 3: Создать пустой `__init__.py` пакета**
 
 Пока пустой — экспорты классов появятся в Task 3.
 
@@ -84,7 +107,7 @@ mkdir -p "ml-service/app/inference/pegasus"
 touch "ml-service/app/inference/pegasus/__init__.py"
 ```
 
-- [ ] **Step 3: Написать падающие тесты**
+- [ ] **Step 4: Написать падающие тесты**
 
 Создать `ml-service/tests/test_pegasus_mapping.py`. Каталог `tests/` **без**
 `__init__.py`: тесты запускаются как `python -m pytest` из `/app`, поэтому `/app`
@@ -208,12 +231,12 @@ def test_to_segments_raises_on_empty_result():
         to_segments([], duration=10.0)
 ```
 
-- [ ] **Step 4: Убедиться, что тесты падают**
+- [ ] **Step 5: Убедиться, что тесты падают**
 
 Run: `docker compose exec ml-service python -m pytest tests/test_pegasus_mapping.py -q`
 Expected: FAIL при сборе — `ModuleNotFoundError: No module named 'app.inference.pegasus.mapping'`
 
-- [ ] **Step 5: Написать реализацию**
+- [ ] **Step 6: Написать реализацию**
 
 Создать `ml-service/app/inference/pegasus/mapping.py`:
 
@@ -316,12 +339,12 @@ def to_segments(raw: list[dict], duration: float) -> list[dict]:
 Собственный блок `if __name__ == "__main__":` в этот модуль **не добавлять** —
 тесты живут в `tests/`.
 
-- [ ] **Step 6: Убедиться, что тесты проходят**
+- [ ] **Step 7: Убедиться, что тесты проходят**
 
 Run: `docker compose exec ml-service python -m pytest tests/ -q`
 Expected: PASS, все тесты зелёные
 
-- [ ] **Step 7: Убедиться, что чужие тесты не задеты**
+- [ ] **Step 8: Убедиться, что чужие тесты не задеты**
 
 Run:
 ```bash
@@ -330,10 +353,11 @@ docker compose exec backend python -m app.labels
 ```
 Expected: обе команды печатают `ok`
 
-- [ ] **Step 8: Коммит**
+- [ ] **Step 9: Коммит**
 
 ```bash
-git add ml-service/requirements.txt ml-service/tests/test_pegasus_mapping.py \
+git add CLAUDE.md ml-service/requirements.txt \
+        ml-service/tests/test_pegasus_mapping.py \
         ml-service/app/inference/pegasus/__init__.py \
         ml-service/app/inference/pegasus/mapping.py
 git commit -m "test(ml-service): add pytest and cover the Pegasus output mapping"
@@ -947,23 +971,9 @@ AGENTS.md требует обновлять документацию в том �
 - Consumes: факты из задач 1–5.
 - Produces: документацию, соответствующую коду.
 
-- [ ] **Step 1: Обновить AGENTS.md**
+- [ ] **Step 1: Обновить AGENTS.md по Pegasus**
 
-В разделе «Testing» добавить абзац о втором, аддитивном способе — существующее
-описание блоков `if __name__ == "__main__":` не удалять и не переписывать:
-
-> New tests are written with pytest and live in `ml-service/tests/`. They run inside
-> the container, from `/app`, so the `app` package is importable without a
-> `conftest.py`:
->
-> ```bash
-> docker compose exec ml-service python -m pytest tests/ -q
-> ```
->
-> The older `if __name__ == "__main__":` self-tests stay where they are. Note that
-> `python -m app.inference` does not run: `app/inference/` is a package without a
-> `__main__.py`, so the block at the bottom of its `__init__.py` is unreachable.
-> Its assertions are not covered anywhere.
+Конвенция тестов уже записана в Task 1 — здесь только специфика Pegasus.
 
 В раздел «Adding an inference pipeline» добавить абзац об осознанном отклонении:
 
