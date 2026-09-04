@@ -6,10 +6,22 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.inference.pegasus.client import (
+    MAX_UPLOAD_BYTES,
     TwelveLabsError,
     _wait_for_task,
+    analyze,
     structured_payload,
 )
+
+
+class FakeResponse:
+    """SDK models expose model_dump(); plain dicts slip through _as_dict as-is."""
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    def model_dump(self) -> dict:
+        return self._data
 
 
 class TestStructuredPayload:
@@ -236,7 +248,7 @@ class TestWaitForTask:
         with pytest.raises(TwelveLabsError) as exc:
             _wait_for_task(client, "t1", timeout=0.1)
         error_msg = str(exc.value)
-        assert "did not complete" in error_msg
+        assert "did not become ready" in error_msg
         assert "pending" in error_msg
 
     def test_ready_on_first_call_no_sleep(self, monkeypatch):
@@ -270,3 +282,165 @@ class TestWaitForTask:
         client = self._make_fake_client(responses)
         _wait_for_task(client, "t1", timeout=30.0)
         assert sleep_calls == [POLL_INTERVAL]
+
+
+class TestAnalyze:
+    """Test analyze() orchestration with a fake SDK client: no network, no key."""
+
+    def _ready_client(self) -> MagicMock:
+        """Client where upload, asset wait and task wait all succeed first try."""
+        client = MagicMock()
+        client.assets.create.return_value = FakeResponse(
+            {"id": "asset1", "status": "ready"}
+        )
+        client.assets.retrieve.return_value = FakeResponse(
+            {"id": "asset1", "status": "ready"}
+        )
+        client.assets.delete.return_value = None
+        client.analyze_async.tasks.create.return_value = FakeResponse({"id": "task1"})
+        client.analyze_async.tasks.retrieve.return_value = FakeResponse(
+            {
+                "status": "ready",
+                "result": {
+                    "data": '{"actions": [{"action_type": "pour", "start": 1.0, "end": 2.0}]}',
+                    "finish_reason": "stop",
+                },
+            }
+        )
+        return client
+
+    def _install(
+        self,
+        monkeypatch,
+        client: MagicMock,
+        tmp_path,
+        size: int = 100,
+    ) -> str:
+        video_path = str(tmp_path / "fake.mp4")
+        with open(video_path, "wb") as fh:
+            fh.write(b"x")
+        monkeypatch.setattr(
+            "app.inference.pegasus.client.os.path.getsize", lambda p: size
+        )
+        monkeypatch.setattr(
+            "app.inference.pegasus.client.time.sleep", lambda d: None
+        )
+        # analyze() imports the SDK lazily inside the function body; patch the
+        # import site so the real SDK is never touched.
+        monkeypatch.setattr("twelvelabs.TwelveLabs", lambda api_key: client)
+        return video_path
+
+    def test_empty_api_key_raises_before_any_client(self, monkeypatch, tmp_path):
+        def boom(api_key):
+            raise AssertionError("client constructed without a key")
+
+        monkeypatch.setattr("twelvelabs.TwelveLabs", boom)
+        path = self._install(monkeypatch, self._ready_client(), tmp_path)
+        with pytest.raises(TwelveLabsError, match="TWELVELABS_API_KEY is not set"):
+            analyze(
+                path, prompt="p", response_format={}, analysis_mode="general",
+                timeout=60.0, api_key="",
+            )
+
+    def test_oversized_file_raises_before_any_upload(self, monkeypatch, tmp_path):
+        def boom(api_key):
+            raise AssertionError("client constructed")
+
+        monkeypatch.setattr("twelvelabs.TwelveLabs", boom)
+        path = self._install(
+            monkeypatch, self._ready_client(), tmp_path, size=MAX_UPLOAD_BYTES + 1
+        )
+        with pytest.raises(TwelveLabsError, match="upload limit"):
+            analyze(
+                path, prompt="p", response_format={}, analysis_mode="general",
+                timeout=60.0, api_key="k",
+            )
+
+    def test_task_create_receives_asset_id_and_params(self, monkeypatch, tmp_path):
+        client = self._ready_client()
+        path = self._install(monkeypatch, client, tmp_path)
+        analyze(
+            path, prompt="p", response_format={"type": "x"}, analysis_mode="general",
+            timeout=60.0, api_key="k",
+        )
+        kwargs = client.analyze_async.tasks.create.call_args.kwargs
+        assert kwargs["video"] == {"type": "asset_id", "asset_id": "asset1"}
+        assert kwargs["model_name"] == "pegasus1.5"
+        assert kwargs["analysis_mode"] == "general"
+        assert kwargs["response_format"] == {"type": "x"}
+        assert kwargs["prompt"] == "p"
+
+    def test_asset_is_waited_on_before_task_creation(self, monkeypatch, tmp_path):
+        client = self._ready_client()
+        client.assets.retrieve.side_effect = [
+            FakeResponse({"id": "asset1", "status": "processing"}),
+            FakeResponse({"id": "asset1", "status": "ready"}),
+        ]
+        path = self._install(monkeypatch, client, tmp_path)
+        analyze(
+            path, prompt="p", response_format={}, analysis_mode="general",
+            timeout=60.0, api_key="k",
+        )
+        assert client.assets.retrieve.call_count == 2
+        calls = client.mock_calls
+        last_retrieve = max(
+            i for i, c in enumerate(calls) if c[0] == "assets.retrieve"
+        )
+        first_create = min(
+            i for i, c in enumerate(calls) if c[0] == "analyze_async.tasks.create"
+        )
+        assert last_retrieve < first_create
+
+    def test_asset_deleted_on_success(self, monkeypatch, tmp_path):
+        client = self._ready_client()
+        path = self._install(monkeypatch, client, tmp_path)
+        analyze(
+            path, prompt="p", response_format={}, analysis_mode="general",
+            timeout=60.0, api_key="k",
+        )
+        client.assets.delete.assert_called_once_with(asset_id="asset1")
+
+    def test_asset_deleted_when_analysis_task_fails(self, monkeypatch, tmp_path):
+        client = self._ready_client()
+        client.analyze_async.tasks.retrieve.return_value = FakeResponse(
+            {"task_id": "task1", "status": "failed", "error": {"message": "boom"}}
+        )
+        path = self._install(monkeypatch, client, tmp_path)
+        with pytest.raises(TwelveLabsError, match="analyze task task1 failed"):
+            analyze(
+                path, prompt="p", response_format={}, analysis_mode="general",
+                timeout=60.0, api_key="k",
+            )
+        client.assets.delete.assert_called_once_with(asset_id="asset1")
+
+    def test_asset_deleted_when_asset_processing_fails(self, monkeypatch, tmp_path):
+        client = self._ready_client()
+        client.assets.retrieve.return_value = FakeResponse(
+            {"id": "asset1", "status": "failed", "error": {"message": "corrupt file"}}
+        )
+        path = self._install(monkeypatch, client, tmp_path)
+        with pytest.raises(TwelveLabsError, match="asset asset1 failed"):
+            analyze(
+                path, prompt="p", response_format={}, analysis_mode="general",
+                timeout=60.0, api_key="k",
+            )
+        client.assets.delete.assert_called_once_with(asset_id="asset1")
+
+    def test_finish_reason_length_raises(self, monkeypatch, tmp_path):
+        client = self._ready_client()
+        client.analyze_async.tasks.retrieve.return_value = FakeResponse(
+            {
+                "status": "ready",
+                "result": {
+                    "data": '{"actions": []}',
+                    "finish_reason": "length",
+                },
+            }
+        )
+        path = self._install(monkeypatch, client, tmp_path)
+        with pytest.raises(TwelveLabsError, match="truncated"):
+            analyze(
+                path, prompt="p", response_format={}, analysis_mode="general",
+                timeout=60.0, api_key="k",
+            )
+        client.assets.delete.assert_called_once_with(asset_id="asset1")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 
@@ -8,6 +9,8 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 MODEL_NAME = "pegasus1.5"
 TEMPERATURE = 0.2
 POLL_INTERVAL = 3.0
+
+logger = logging.getLogger(__name__)
 
 
 class TwelveLabsError(RuntimeError):
@@ -64,39 +67,60 @@ def structured_payload(task_result: dict) -> dict | list:
     return payload
 
 
-def _wait_for_task(client, task_id: str, timeout: float) -> dict:
-    """Poll tasks.retrieve() until task reaches terminal state or timeout."""
+def _wait_for_status(client, *, retrieve, timeout: float, describe: str) -> dict:
+    """Poll retrieve() until the object is ready or failed, bounded by the timeout budget."""
     start = time.time()
     while True:
-        task = _as_dict(client.analyze_async.tasks.retrieve(task_id=task_id))
-        status = str(task.get("status") or "").lower()
+        obj = _as_dict(retrieve())
+        status = str(obj.get("status") or "").lower()
 
         if status == "ready":
-            return task
+            return obj
         if status == "failed":
-            error = task.get("error", {})
+            error = obj.get("error", {})
             error_msg = (
                 error.get("message", "unknown error")
                 if isinstance(error, dict)
                 else str(error)
             )
-            raise TwelveLabsError(f"analyze task {task_id} failed: {error_msg}")
+            raise TwelveLabsError(f"{describe} failed: {error_msg}")
 
-        # Check timeout
         elapsed = time.time() - start
         if elapsed > timeout:
             raise TwelveLabsError(
-                f"analyze task {task_id} did not complete within {timeout} "
-                f"seconds (status: {status})"
+                f"{describe} did not become ready within {timeout} seconds "
+                f"(status: {status})"
             )
 
         time.sleep(POLL_INTERVAL)
 
 
+def _wait_for_task(client, task_id: str, timeout: float) -> dict:
+    return _wait_for_status(
+        client,
+        retrieve=lambda: client.analyze_async.tasks.retrieve(task_id=task_id),
+        timeout=timeout,
+        describe=f"analyze task {task_id}",
+    )
+
+
+def _wait_for_asset(client, asset_id: str, timeout: float) -> dict:
+    return _wait_for_status(
+        client,
+        retrieve=lambda: client.assets.retrieve(asset_id=asset_id),
+        timeout=timeout,
+        describe=f"asset {asset_id}",
+    )
+
+
+def _remaining(timeout: float, start: float) -> float:
+    return max(timeout - (time.time() - start), 0.0)
+
+
 def analyze(
     video_path: str,
     *,
-    prompt: str,
+    prompt: str | None = None,
     response_format: dict,
     analysis_mode: str,
     timeout: float,
@@ -115,36 +139,59 @@ def analyze(
     from twelvelabs import TwelveLabs
 
     client = TwelveLabs(api_key=api_key)
-    with open(video_path, "rb") as fh:
-        asset = _as_dict(client.assets.create(method="direct", file=fh))
-    asset_id = asset.get("id") or asset.get("asset_id")
-    if not asset_id:
-        raise TwelveLabsError(f"asset upload returned no id, keys: {sorted(asset)}")
 
-    task = _as_dict(
-        client.analyze_async.tasks.create(
-            video={"type": "asset_id", "asset_id": asset_id},
-            model_name=MODEL_NAME,
-            temperature=TEMPERATURE,
-            prompt=prompt,
-            analysis_mode=analysis_mode,
-            response_format=response_format,
+    # One clock for the whole upload + analysis round trip: every wait gets the
+    # remaining budget, so a stuck upload cannot double the stated TIMEOUT.
+    start = time.time()
+    asset_id: str | None = None
+    try:
+        with open(video_path, "rb") as fh:
+            asset = _as_dict(client.assets.create(method="direct", file=fh))
+        asset_id = asset.get("id") or asset.get("asset_id")
+        if not asset_id:
+            raise TwelveLabsError(f"asset upload returned no id, keys: {sorted(asset)}")
+
+        # Uploads are processed asynchronously; the asset must be ready before use.
+        _wait_for_asset(client, asset_id, _remaining(timeout, start))
+
+        create_kwargs: dict = {
+            "video": {"type": "asset_id", "asset_id": asset_id},
+            "model_name": MODEL_NAME,
+            "temperature": TEMPERATURE,
+            "analysis_mode": analysis_mode,
+            "response_format": response_format,
+        }
+        # The API rejects the prompt parameter in SME mode (time_based_metadata) with a
+        # 400; prompting there goes through response_format.segment_definitions[].description.
+        if prompt is not None:
+            create_kwargs["prompt"] = prompt
+        task = _as_dict(
+            client.analyze_async.tasks.create(**create_kwargs)
         )
-    )
-    task_id = task.get("id") or task.get("task_id")
-    if not task_id:
-        raise TwelveLabsError(f"analyze task returned no id, keys: {sorted(task)}")
+        task_id = task.get("id") or task.get("task_id")
+        if not task_id:
+            raise TwelveLabsError(f"analyze task returned no id, keys: {sorted(task)}")
 
-    result = _wait_for_task(client, task_id, timeout)
+        result = _wait_for_task(client, task_id, _remaining(timeout, start))
 
-    # Check finish_reason in the nested result object
-    task_result_obj = result.get("result", {})
-    if isinstance(task_result_obj, dict):
-        finish_reason = str(task_result_obj.get("finish_reason") or "").lower()
-        if finish_reason == "length":
-            raise TwelveLabsError(
-                f"analyze task {task_id} was truncated (finish_reason=length); "
-                "segments are incomplete"
-            )
+        # Check finish_reason in the nested result object
+        task_result_obj = result.get("result", {})
+        if isinstance(task_result_obj, dict):
+            finish_reason = str(task_result_obj.get("finish_reason") or "").lower()
+            if finish_reason == "length":
+                raise TwelveLabsError(
+                    f"analyze task {task_id} was truncated (finish_reason=length); "
+                    "segments are incomplete"
+                )
 
-    return structured_payload(result)
+        return structured_payload(result)
+    finally:
+        # Every job, successful or failed, leaves an asset behind on the account.
+        # Never mask the real error: deletion failures are logged, not raised.
+        if asset_id:
+            try:
+                client.assets.delete(asset_id=asset_id)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to delete TwelveLabs asset %s: %s", asset_id, exc
+                )
