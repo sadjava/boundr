@@ -17,7 +17,14 @@
 - Все новые Python-модули начинаются со строки `from __future__ import annotations`.
 - Современные аннотации типов (`str | None`, `list[dict]`), строки до ~100 символов. Линтера нет — подражать окружающему стилю, не переформатировать чужие файлы.
 - Комментарии редкие и объясняют «почему», а не «что».
-- Тесты — блок `if __name__ == "__main__":` внизу модуля, печатающий `ok`. Pytest в репозитории нет.
+- **Тесты — аддитивно.** Новые тесты пишутся на pytest и лежат в `ml-service/tests/`.
+  Существующие блоки `if __name__ == "__main__":` в `app/segment.py`, `app/labels.py`,
+  `app/inference/__init__.py` и `app/inference/base.py` **не трогаем и не переносим** —
+  ни строки. Новые модули собственных `__main__`-блоков не получают.
+- Известный факт, менять его не нужно: `python -m app.inference` завершается ошибкой,
+  потому что `app/inference/` — пакет без `__main__.py`, и блок `if __name__ ==
+  "__main__":` в его `__init__.py` недостижим. Это чужой код, оставляем как есть.
+  Не пытаться «починить» его по ходу задач.
 - Контракт аннотации заморожен: `{id, start, end, action, object, keyframe}`, время в **секундах**.
 - Инвариант: `start <= keyframe <= end`. Бэкенд молча чинит нарушения, поэтому ошибка здесь не всплывёт как исключение.
 - `ctx.action_types` и `ctx.objects` равные `None` означают **открытый словарь — это основной случай**, а не ошибка.
@@ -31,9 +38,13 @@
 
 ### Task 1: Маппинг ответа в контракт аннотаций
 
-Чистая логика без сети и без SDK. Делается первой, потому что от неё зависят оба режима, а протестировать её можно без ключа.
+Чистая логика без сети и без SDK. Делается первой, потому что от неё зависят оба
+режима, а протестировать её можно без ключа. Эта же задача заводит pytest, потому что
+её результат без него не проверить.
 
 **Files:**
+- Modify: `ml-service/requirements.txt`
+- Create: `ml-service/tests/test_pegasus_mapping.py`
 - Create: `ml-service/app/inference/pegasus/__init__.py`
 - Create: `ml-service/app/inference/pegasus/mapping.py`
 
@@ -44,9 +55,27 @@
   - `to_segments(raw: list[dict], duration: float) -> list[dict]`
   - `parse_analyze_payload(payload: dict) -> list[dict]`
   - `parse_segment_payload(payload: dict | list) -> list[dict]`
-  - Оба парсера возвращают «сырые» записи вида `{"action": ..., "object": ..., "start": ..., "end": ...}`, которые затем передаются в `to_segments`.
+  - Оба парсера возвращают «сырые» записи вида
+    `{"action": ..., "object": ..., "start": ..., "end": ...}`, которые затем
+    передаются в `to_segments`.
 
-- [ ] **Step 1: Создать пустой `__init__.py` пакета**
+- [ ] **Step 1: Добавить pytest и пересобрать образ**
+
+Дописать в конец `ml-service/requirements.txt`:
+
+```text
+pytest>=8.3
+```
+
+Затем:
+
+```bash
+docker compose up -d --build ml-service
+docker compose exec ml-service python -m pytest --version
+```
+Expected: печатает версию pytest 8.x
+
+- [ ] **Step 2: Создать пустой `__init__.py` пакета**
 
 Пока пустой — экспорты классов появятся в Task 3.
 
@@ -55,111 +84,142 @@ mkdir -p "ml-service/app/inference/pegasus"
 touch "ml-service/app/inference/pegasus/__init__.py"
 ```
 
-- [ ] **Step 2: Написать падающий self-test**
+- [ ] **Step 3: Написать падающие тесты**
 
-Создать `ml-service/app/inference/pegasus/mapping.py` **только** с этим блоком (без реализации), чтобы убедиться, что тест действительно падает:
+Создать `ml-service/tests/test_pegasus_mapping.py`. Каталог `tests/` **без**
+`__init__.py`: тесты запускаются как `python -m pytest` из `/app`, поэтому `/app`
+попадает в `sys.path` и `import app` работает без `conftest.py`.
 
 ```python
 from __future__ import annotations
 
+import pytest
 
-if __name__ == "__main__":
-    ctx_open = JobContext(job_id="j", video_id="v", s3_key="")
-    prompt_open = vocabulary_prompt(ctx_open)
-    assert "pour" in prompt_open, "open vocab prompt should show example labels"
+from app.inference.base import JobContext
+from app.inference.pegasus.mapping import (
+    parse_analyze_payload,
+    parse_segment_payload,
+    to_segments,
+    vocabulary_prompt,
+)
 
-    ctx_closed = JobContext(
-        job_id="j", video_id="v", s3_key="", action_types=["alpha"], objects=["thing"]
-    )
-    prompt_closed = vocabulary_prompt(ctx_closed)
-    assert "alpha" in prompt_closed and "thing" in prompt_closed
 
-    analyze_payload = {
+def ctx(**kwargs) -> JobContext:
+    return JobContext(job_id="j", video_id="v", s3_key="", **kwargs)
+
+
+def test_open_vocabulary_prompt_shows_examples():
+    text = vocabulary_prompt(ctx())
+    assert "pour" in text
+
+
+def test_closed_vocabulary_prompt_lists_labels():
+    text = vocabulary_prompt(ctx(action_types=["alpha"], objects=["thing"]))
+    assert "alpha" in text
+    assert "thing" in text
+
+
+def test_parse_analyze_payload_normalises_records():
+    payload = {
         "actions": [
             {"action_type": "pour", "object": "cup", "start": 1.0, "end": 2.5},
             {"action_type": "push", "start": 3.0, "end": 4.0},
         ]
     }
-    raw = parse_analyze_payload(analyze_payload)
-    assert raw == [
+    assert parse_analyze_payload(payload) == [
         {"action": "pour", "object": "cup", "start": 1.0, "end": 2.5},
         {"action": "push", "object": None, "start": 3.0, "end": 4.0},
     ]
 
-    segment_payload = {
+
+def test_parse_analyze_payload_rejects_unknown_shape():
+    with pytest.raises(ValueError):
+        parse_analyze_payload({"nonsense": 1})
+
+
+def test_parse_segment_payload_accepts_single_group():
+    payload = {
         "id": "human_action",
-        "segments": [
-            {"action_type": "grab", "object": "bottle", "start": 0.5, "end": 1.5},
-        ],
+        "segments": [{"action_type": "grab", "object": "bottle", "start": 0.5, "end": 1.5}],
     }
-    assert parse_segment_payload(segment_payload) == [
+    assert parse_segment_payload(payload) == [
         {"action": "grab", "object": "bottle", "start": 0.5, "end": 1.5}
     ]
-    assert parse_segment_payload([segment_payload, segment_payload]) == [
-        {"action": "grab", "object": "bottle", "start": 0.5, "end": 1.5}
-    ] * 2
 
-    try:
+
+def test_parse_segment_payload_accepts_list_of_groups():
+    group = {
+        "id": "human_action",
+        "segments": [{"action_type": "grab", "object": "bottle", "start": 0.5, "end": 1.5}],
+    }
+    assert len(parse_segment_payload([group, group])) == 2
+
+
+def test_parse_segment_payload_rejects_unknown_shape():
+    with pytest.raises(ValueError):
         parse_segment_payload({"nonsense": 1})
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("unknown segment payload shape must raise")
 
-    segs = to_segments(raw, duration=10.0)
-    assert len(segs) == 2
-    assert [s["action"] for s in segs] == ["pour", "push"]
-    assert segs[0]["object"] == "cup"
-    assert segs[1]["object"] == "", "missing object becomes empty string"
-    assert all(s["start"] <= s["keyframe"] <= s["end"] for s in segs)
-    assert all(isinstance(s["id"], str) and s["id"] for s in segs)
 
-    ordered = to_segments(
-        [
-            {"action": "b", "object": "", "start": 5.0, "end": 6.0},
-            {"action": "a", "object": "", "start": 1.0, "end": 2.0},
-        ],
-        duration=10.0,
-    )
-    assert [s["action"] for s in ordered] == ["a", "b"], "segments must be sorted by start"
+def test_to_segments_produces_contract_fields():
+    raw = [{"action": "pour", "object": "cup", "start": 1.0, "end": 2.5}]
+    seg = to_segments(raw, duration=10.0)[0]
+    assert set(seg) == {"id", "start", "end", "action", "object", "keyframe"}
+    assert seg["start"] <= seg["keyframe"] <= seg["end"]
+    assert isinstance(seg["id"], str) and seg["id"]
 
-    clipped = to_segments([{"action": "a", "object": "", "start": -1.0, "end": 99.0}], 10.0)
-    assert clipped[0]["start"] == 0.0 and clipped[0]["end"] == 10.0
 
-    dropped = to_segments(
-        [
-            {"action": "good", "object": "", "start": 1.0, "end": 2.0},
-            {"action": "reversed", "object": "", "start": 5.0, "end": 4.0},
-            {"action": "zero", "object": "", "start": 3.0, "end": 3.0},
-            {"action": "", "object": "x", "start": 6.0, "end": 7.0},
-            {"action": "bad_number", "object": "", "start": "x", "end": 8.0},
-        ],
-        duration=10.0,
-    )
-    assert [s["action"] for s in dropped] == ["good"]
+def test_to_segments_blanks_missing_object():
+    raw = [{"action": "push", "object": None, "start": 3.0, "end": 4.0}]
+    assert to_segments(raw, duration=10.0)[0]["object"] == ""
 
-    try:
+
+def test_to_segments_sorts_by_start():
+    raw = [
+        {"action": "b", "object": "", "start": 5.0, "end": 6.0},
+        {"action": "a", "object": "", "start": 1.0, "end": 2.0},
+    ]
+    assert [s["action"] for s in to_segments(raw, duration=10.0)] == ["a", "b"]
+
+
+def test_to_segments_clips_to_duration():
+    raw = [{"action": "a", "object": "", "start": -1.0, "end": 99.0}]
+    seg = to_segments(raw, duration=10.0)[0]
+    assert seg["start"] == 0.0
+    assert seg["end"] == 10.0
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"action": "reversed", "object": "", "start": 5.0, "end": 4.0},
+        {"action": "zero", "object": "", "start": 3.0, "end": 3.0},
+        {"action": "", "object": "x", "start": 6.0, "end": 7.0},
+        {"action": "bad_number", "object": "", "start": "x", "end": 8.0},
+    ],
+)
+def test_to_segments_drops_unusable_records(bad):
+    good = {"action": "good", "object": "", "start": 1.0, "end": 2.0}
+    assert [s["action"] for s in to_segments([good, bad], duration=10.0)] == ["good"]
+
+
+def test_to_segments_raises_on_empty_result():
+    # A silently empty annotation looks like a pipeline that found nothing.
+    with pytest.raises(ValueError):
         to_segments([], duration=10.0)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("empty result must raise, not return []")
-
-    print("ok")
 ```
 
-- [ ] **Step 3: Убедиться, что тест падает**
+- [ ] **Step 4: Убедиться, что тесты падают**
 
-Run: `docker compose exec ml-service python -m app.inference.pegasus.mapping`
-Expected: FAIL — `NameError: name 'JobContext' is not defined`
+Run: `docker compose exec ml-service python -m pytest tests/test_pegasus_mapping.py -q`
+Expected: FAIL при сборе — `ModuleNotFoundError: No module named 'app.inference.pegasus.mapping'`
 
-Если контейнер не запущен: `docker compose up -d ml-service`.
+- [ ] **Step 5: Написать реализацию**
 
-- [ ] **Step 4: Написать реализацию**
-
-Вставить **над** блоком `if __name__ == "__main__":` в том же файле:
+Создать `ml-service/app/inference/pegasus/mapping.py`:
 
 ```python
+from __future__ import annotations
+
 from app.inference.base import JobContext, make_segment
 
 OPEN_ACTION_HINT = (
@@ -253,16 +313,30 @@ def to_segments(raw: list[dict], duration: float) -> list[dict]:
     return out
 ```
 
-- [ ] **Step 5: Убедиться, что тест проходит**
+Собственный блок `if __name__ == "__main__":` в этот модуль **не добавлять** —
+тесты живут в `tests/`.
 
-Run: `docker compose exec ml-service python -m app.inference.pegasus.mapping`
-Expected: PASS — печатает `ok`
+- [ ] **Step 6: Убедиться, что тесты проходят**
 
-- [ ] **Step 6: Коммит**
+Run: `docker compose exec ml-service python -m pytest tests/ -q`
+Expected: PASS, все тесты зелёные
+
+- [ ] **Step 7: Убедиться, что чужие тесты не задеты**
+
+Run:
+```bash
+docker compose exec backend python -m app.segment
+docker compose exec backend python -m app.labels
+```
+Expected: обе команды печатают `ok`
+
+- [ ] **Step 8: Коммит**
 
 ```bash
-git add ml-service/app/inference/pegasus/__init__.py ml-service/app/inference/pegasus/mapping.py
-git commit -m "feat(ml-service): map Pegasus output to the annotation contract"
+git add ml-service/requirements.txt ml-service/tests/test_pegasus_mapping.py \
+        ml-service/app/inference/pegasus/__init__.py \
+        ml-service/app/inference/pegasus/mapping.py
+git commit -m "test(ml-service): add pytest and cover the Pegasus output mapping"
 ```
 
 ---
@@ -286,7 +360,7 @@ git commit -m "feat(ml-service): map Pegasus output to the annotation contract"
 
 - [ ] **Step 1: Добавить зависимость**
 
-Дописать в конец `ml-service/requirements.txt`:
+Дописать в конец `ml-service/requirements.txt` (под добавленным в Task 1 `pytest`):
 
 ```text
 twelvelabs>=1.2.9,<2
@@ -477,7 +551,9 @@ git commit -m "feat(ml-service): add TwelveLabs SDK client for Pegasus"
 - Create: `ml-service/app/inference/pegasus/analyze.py`
 - Create: `ml-service/app/inference/pegasus/segment.py`
 - Modify: `ml-service/app/inference/pegasus/__init__.py`
-- Modify: `ml-service/app/inference/__init__.py`
+- Modify: `ml-service/app/inference/__init__.py` (**только** импорт и две записи в
+  `PIPELINES`; блок `if __name__ == "__main__":` в конце файла не трогать)
+- Create: `ml-service/tests/test_pegasus_pipelines.py`
 
 **Interfaces:**
 - Consumes: `Inference`, `JobContext`, `VideoMeta` из `app.inference.base`; `analyze`, `TwelveLabsError` из `app.inference.pegasus.client`; `vocabulary_prompt`, `to_segments`, `parse_analyze_payload`, `parse_segment_payload` из `app.inference.pegasus.mapping`; `get_settings` из `app.config`.
@@ -668,37 +744,57 @@ from app.inference.pegasus import PegasusAnalyzeInference, PegasusSegmentInferen
     "pegasus_segment": PegasusSegmentInference,
 ```
 
-- [ ] **Step 5: Расширить self-test**
+- [ ] **Step 5: Написать тесты регистрации**
 
-Добавить в `ml-service/app/inference/__init__.py` внутрь блока `if __name__ == "__main__":`, непосредственно перед `print("ok")`:
+Создать `ml-service/tests/test_pegasus_pipelines.py`:
 
 ```python
+from __future__ import annotations
+
+from app.inference import get_pipeline
+from app.inference.base import JobContext
+from app.inference.pegasus import PegasusAnalyzeInference, PegasusSegmentInference
+
+
+def test_pipelines_are_registered():
     assert get_pipeline("pegasus_analyze").name == "pegasus_analyze"
     assert get_pipeline("pegasus_segment").name == "pegasus_segment"
+
+
+def test_pipeline_versions_and_timeout():
     assert PegasusAnalyzeInference.version == 1
     assert PegasusSegmentInference.version == 1
-    assert PegasusAnalyzeInference.TIMEOUT == PegasusSegmentInference.TIMEOUT == 600.0
-    pegasus_ctx = JobContext(
-        job_id="j", video_id="x", s3_key="", action_types=["alpha"], objects=["thing"]
+    assert PegasusAnalyzeInference.TIMEOUT == 600.0
+    assert PegasusSegmentInference.TIMEOUT == 600.0
+
+
+def test_prompts_carry_the_project_vocabulary():
+    ctx = JobContext(
+        job_id="j", video_id="v", s3_key="", action_types=["alpha"], objects=["thing"]
     )
     for cls in (PegasusAnalyzeInference, PegasusSegmentInference):
-        text = cls().build_prompt(pegasus_ctx)
-        assert "alpha" in text and "thing" in text, cls.name
+        text = cls().build_prompt(ctx)
+        assert "alpha" in text, cls.name
+        assert "thing" in text, cls.name
+
+
+def test_prompts_stay_open_without_a_vocabulary():
+    ctx = JobContext(job_id="j", video_id="v", s3_key="")
+    for cls in (PegasusAnalyzeInference, PegasusSegmentInference):
+        assert "pour" in cls().build_prompt(ctx), cls.name
 ```
 
-AGENTS.md просит проверять здесь вывод нового пайплайна, но вывод Pegasus требует сети,
-ключа и расходует квоту. Поэтому здесь проверяется только регистрация и построение
-промпта, а маппинг вывода полностью покрыт self-тестом из Task 1.
+Вывод самих пайплайнов здесь не проверяется: он требует сети, ключа и расходует квоту.
+Маппинг вывода полностью покрыт тестами из Task 1.
 
-- [ ] **Step 6: Прогнать оба self-теста**
+- [ ] **Step 6: Прогнать тесты**
 
 Run:
 ```bash
 docker compose restart ml-service
-docker compose exec ml-service python -m app.inference
-docker compose exec ml-service python -m app.inference.pegasus.mapping
+docker compose exec ml-service python -m pytest tests/ -q
 ```
-Expected: обе команды печатают `ok`
+Expected: PASS, все тесты зелёные
 
 - [ ] **Step 7: Проверить, что ML-сервис отдаёт версии**
 
@@ -810,7 +906,7 @@ Run: `docker compose logs --tail=100 ml-service`
 (`no structured payload in task result, keys: [...]` или
 `unexpected segment payload, no 'segments' key: ...`). Поправить `PAYLOAD_KEYS`
 в `client.py` или соответствующий парсер в `mapping.py` под реальную форму,
-дописать в self-тест Task 1 случай с настоящей формой ответа и повторить прогон.
+дописать в `tests/test_pegasus_mapping.py` случай с настоящей формой ответа и повторить прогон.
 
 - [ ] **Step 4: Проверить результат на таймлайне**
 
@@ -822,12 +918,11 @@ Run: `docker compose logs --tail=100 ml-service`
 
 Run:
 ```bash
-docker compose exec ml-service python -m app.inference.pegasus.mapping
-docker compose exec ml-service python -m app.inference
+docker compose exec ml-service python -m pytest tests/ -q
 docker compose exec backend python -m app.segment
 docker compose exec backend python -m app.labels
 ```
-Expected: все четыре печатают `ok`
+Expected: pytest зелёный, обе команды бэкенда печатают `ok`
 
 - [ ] **Step 6: Коммит (только если что-то правилось)**
 
@@ -854,11 +949,21 @@ AGENTS.md требует обновлять документацию в том �
 
 - [ ] **Step 1: Обновить AGENTS.md**
 
-В разделе «Testing» добавить в список команд:
+В разделе «Testing» добавить абзац о втором, аддитивном способе — существующее
+описание блоков `if __name__ == "__main__":` не удалять и не переписывать:
 
-```bash
-docker compose exec ml-service python -m app.inference.pegasus.mapping  # Pegasus output mapping
-```
+> New tests are written with pytest and live in `ml-service/tests/`. They run inside
+> the container, from `/app`, so the `app` package is importable without a
+> `conftest.py`:
+>
+> ```bash
+> docker compose exec ml-service python -m pytest tests/ -q
+> ```
+>
+> The older `if __name__ == "__main__":` self-tests stay where they are. Note that
+> `python -m app.inference` does not run: `app/inference/` is a package without a
+> `__main__.py`, so the block at the bottom of its `__init__.py` is unreachable.
+> Its assertions are not covered anywhere.
 
 В раздел «Adding an inference pipeline» добавить абзац об осознанном отклонении:
 
@@ -901,8 +1006,8 @@ docker compose exec ml-service python -m app.inference.pegasus.mapping  # Pegasu
 
 - [ ] **Step 5: Проверить, что команды из документации работают**
 
-Run: `docker compose exec ml-service python -m app.inference.pegasus.mapping`
-Expected: печатает `ok`
+Run: `docker compose exec ml-service python -m pytest tests/ -q`
+Expected: PASS
 
 - [ ] **Step 6: Коммит**
 
