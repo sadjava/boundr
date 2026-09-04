@@ -89,4 +89,6 @@ export const INFERENCE_TYPES: InferenceType[] = [
   { id: "overlap", name: "Overlap", description: "Concurrent actions that overlap in time" },
   { id: "sequential", name: "Sequential", description: "Non-overlapping actions, one after another" },
   { id: "dense", name: "Dense", description: "Shorter windows with more overlap" },
+  { id: "pegasus_analyze", name: "Pegasus (analyze)", description: "TwelveLabs Pegasus, free-form actions via a JSON schema" },
+  { id: "pegasus_segment", name: "Pegasus (segment)", description: "TwelveLabs Pegasus, time-based segmentation of actions" },
 ];
