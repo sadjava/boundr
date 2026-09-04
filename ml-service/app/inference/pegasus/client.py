@@ -49,12 +49,19 @@ def structured_payload(task_result: dict) -> dict | list:
         )
 
     try:
-        return json.loads(data_str)
+        payload = json.loads(data_str)
     except json.JSONDecodeError as e:
         excerpt = data_str[:200]
         raise TwelveLabsError(
             f"task result data is not valid JSON: {e}; excerpt: {excerpt}"
         )
+
+    if not isinstance(payload, (dict, list)):
+        raise TwelveLabsError(
+            f"structured payload must be dict or list, got {type(payload).__name__}"
+        )
+
+    return payload
 
 
 def _wait_for_task(client, task_id: str, timeout: float) -> dict:

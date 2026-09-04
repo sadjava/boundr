@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import time
+from unittest.mock import MagicMock
+
 import pytest
 
-from app.inference.pegasus.client import TwelveLabsError, structured_payload
+from app.inference.pegasus.client import (
+    TwelveLabsError,
+    _wait_for_task,
+    structured_payload,
+)
 
 
 class TestStructuredPayload:
@@ -117,3 +124,127 @@ class TestStructuredPayload:
         with pytest.raises(TwelveLabsError) as exc:
             structured_payload(task)
         assert "is not a dict" in str(exc.value)
+
+    def test_payload_is_string_not_dict_or_list(self):
+        """Raise error when decoded payload is a string, not dict or list."""
+        task = {
+            "status": "ready",
+            "result": {
+                "generation_id": "g123",
+                "data": '"just a string"',
+                "finish_reason": "stop",
+                "usage": {},
+            },
+        }
+        with pytest.raises(TwelveLabsError) as exc:
+            structured_payload(task)
+        assert "must be dict or list" in str(exc.value)
+        assert "str" in str(exc.value)
+
+    def test_payload_is_int_not_dict_or_list(self):
+        """Raise error when decoded payload is an int, not dict or list."""
+        task = {
+            "status": "ready",
+            "result": {
+                "generation_id": "g123",
+                "data": "42",
+                "finish_reason": "stop",
+                "usage": {},
+            },
+        }
+        with pytest.raises(TwelveLabsError) as exc:
+            structured_payload(task)
+        assert "must be dict or list" in str(exc.value)
+        assert "int" in str(exc.value)
+
+
+class TestWaitForTask:
+    """Test the polling loop for task completion."""
+
+    def _make_fake_client(self, responses: list[dict]) -> MagicMock:
+        """Create a fake client that returns scripted task dicts."""
+        def make_mock_with_dict(data):
+            mock = MagicMock()
+            mock.model_dump = lambda: data
+            return mock
+
+        client = MagicMock()
+        # responses is a list of dicts to return on successive retrieve() calls
+        client.analyze_async.tasks.retrieve.side_effect = [
+            make_mock_with_dict(resp) for resp in responses
+        ]
+        return client
+
+    def test_task_returns_ready_after_polling(self):
+        """Poll through processing states until ready."""
+        responses = [
+            {"task_id": "t1", "status": "processing"},
+            {"task_id": "t1", "status": "processing"},
+            {"task_id": "t1", "status": "ready"},
+        ]
+        client = self._make_fake_client(responses)
+        result = _wait_for_task(client, "t1", timeout=30.0)
+        assert result["status"] == "ready"
+        assert client.analyze_async.tasks.retrieve.call_count == 3
+
+    def test_task_failed_with_error_message(self):
+        """Task failure includes API error message."""
+        responses = [
+            {
+                "task_id": "t1",
+                "status": "failed",
+                "error": {"message": "API rate limit exceeded"},
+            }
+        ]
+        client = self._make_fake_client(responses)
+        with pytest.raises(TwelveLabsError) as exc:
+            _wait_for_task(client, "t1", timeout=30.0)
+        error_msg = str(exc.value)
+        assert "failed" in error_msg
+        assert "API rate limit exceeded" in error_msg
+
+    def test_task_timeout_includes_last_status(self):
+        """Timeout error names the last-seen status."""
+        responses = [
+            {"task_id": "t1", "status": "processing"},
+            {"task_id": "t1", "status": "pending"},
+        ]
+        client = self._make_fake_client(responses)
+        with pytest.raises(TwelveLabsError) as exc:
+            _wait_for_task(client, "t1", timeout=0.1)
+        error_msg = str(exc.value)
+        assert "did not complete" in error_msg
+        assert "pending" in error_msg
+
+    def test_ready_on_first_call_no_sleep(self, monkeypatch):
+        """Ready status on first retrieve returns immediately."""
+        sleep_calls = []
+        monkeypatch.setattr(
+            "app.inference.pegasus.client.time.sleep",
+            lambda duration: sleep_calls.append(duration),
+        )
+
+        responses = [{"task_id": "t1", "status": "ready"}]
+        client = self._make_fake_client(responses)
+        result = _wait_for_task(client, "t1", timeout=30.0)
+        assert result["status"] == "ready"
+        assert len(sleep_calls) == 0  # No sleep occurred
+
+    def test_polling_sleeps_between_attempts(self, monkeypatch):
+        """Sleep happens between poll attempts."""
+        from app.inference.pegasus.client import POLL_INTERVAL
+
+        sleep_calls = []
+        monkeypatch.setattr(
+            "app.inference.pegasus.client.time.sleep",
+            lambda duration: sleep_calls.append(duration),
+        )
+
+        responses = [
+            {"task_id": "t1", "status": "processing"},
+            {"task_id": "t1", "status": "ready"},
+        ]
+        client = self._make_fake_client(responses)
+        _wait_for_task(client, "t1", timeout=30.0)
+        assert len(sleep_calls) == 1
+        assert sleep_calls[0] == POLL_INTERVAL
