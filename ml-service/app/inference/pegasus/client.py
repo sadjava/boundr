@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -7,9 +8,6 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 MODEL_NAME = "pegasus1.5"
 TEMPERATURE = 0.2
 POLL_INTERVAL = 3.0
-
-# Keys the SDK may carry the structured payload under; checked in order.
-PAYLOAD_KEYS = ("data", "result", "content", "output")
 
 
 class TwelveLabsError(RuntimeError):
@@ -26,12 +24,37 @@ def _as_dict(obj: object) -> dict:
     raise TwelveLabsError(f"cannot convert SDK response of type {type(obj).__name__}")
 
 
-def structured_payload(result: dict) -> dict | list:
-    for key in PAYLOAD_KEYS:
-        value = result.get(key)
-        if isinstance(value, (dict, list)):
-            return value
-    raise TwelveLabsError(f"no structured payload in task result, keys: {sorted(result)}")
+def structured_payload(task_result: dict) -> dict | list:
+    """Extract and decode the structured payload from AnalyzeTaskResult.data."""
+    if "result" not in task_result:
+        raise TwelveLabsError(
+            f"task result has no 'result' field, keys: {sorted(task_result)}"
+        )
+
+    task_result_obj = task_result["result"]
+    if not isinstance(task_result_obj, dict):
+        raise TwelveLabsError(
+            f"task result field is not a dict: {type(task_result_obj).__name__}"
+        )
+
+    data_str = task_result_obj.get("data")
+    if data_str is None:
+        raise TwelveLabsError(
+            f"task result has no 'data' field, keys: {sorted(task_result_obj)}"
+        )
+
+    if not isinstance(data_str, str):
+        raise TwelveLabsError(
+            f"task result data is not a string: {type(data_str).__name__}"
+        )
+
+    try:
+        return json.loads(data_str)
+    except json.JSONDecodeError as e:
+        excerpt = data_str[:200]
+        raise TwelveLabsError(
+            f"task result data is not valid JSON: {e}; excerpt: {excerpt}"
+        )
 
 
 def _wait_for_task(client, task_id: str, timeout: float) -> dict:
@@ -41,19 +64,23 @@ def _wait_for_task(client, task_id: str, timeout: float) -> dict:
         task = _as_dict(client.analyze_async.tasks.retrieve(task_id=task_id))
         status = str(task.get("status") or "").lower()
 
-        # Check for terminal states
-        if status in ("ready", "done", "completed"):
+        if status == "ready":
             return task
         if status == "failed":
             error = task.get("error", {})
-            error_msg = error.get("message", "unknown error") if isinstance(error, dict) else str(error)
+            error_msg = (
+                error.get("message", "unknown error")
+                if isinstance(error, dict)
+                else str(error)
+            )
             raise TwelveLabsError(f"analyze task {task_id} failed: {error_msg}")
 
         # Check timeout
         elapsed = time.time() - start
         if elapsed > timeout:
             raise TwelveLabsError(
-                f"analyze task {task_id} did not complete within {timeout} seconds (status: {status})"
+                f"analyze task {task_id} did not complete within {timeout} "
+                f"seconds (status: {status})"
             )
 
         time.sleep(POLL_INTERVAL)
@@ -89,7 +116,7 @@ def analyze(
 
     task = _as_dict(
         client.analyze_async.tasks.create(
-            video={"type": "asset", "asset_id": asset_id},
+            video={"type": "asset_id", "asset_id": asset_id},
             model_name=MODEL_NAME,
             temperature=TEMPERATURE,
             prompt=prompt,
@@ -103,11 +130,14 @@ def analyze(
 
     result = _wait_for_task(client, task_id, timeout)
 
-    status = str(result.get("status") or "").lower()
-    if status and status not in ("ready", "done", "completed"):
-        raise TwelveLabsError(f"analyze task {task_id} finished with status {status}")
-    if str(result.get("finish_reason") or "").lower() == "length":
-        raise TwelveLabsError(
-            f"analyze task {task_id} was truncated (finish_reason=length); segments are incomplete"
-        )
+    # Check finish_reason in the nested result object
+    task_result_obj = result.get("result", {})
+    if isinstance(task_result_obj, dict):
+        finish_reason = str(task_result_obj.get("finish_reason") or "").lower()
+        if finish_reason == "length":
+            raise TwelveLabsError(
+                f"analyze task {task_id} was truncated (finish_reason=length); "
+                "segments are incomplete"
+            )
+
     return structured_payload(result)
