@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from app.config import get_settings
 from app.inference.base import Inference, JobContext, VideoMeta
 from app.inference.pegasus.client import analyze as call_analyze
@@ -39,22 +41,27 @@ SEGMENT_DEFINITIONS = {
 }
 
 
+def _segment_definitions(ctx: JobContext) -> dict:
+    """SEGMENT_DEFINITIONS with the vocabulary folded into the segment description.
+    SME mode rejects the prompt parameter, so the description carries the prompting."""
+    definitions = copy.deepcopy(SEGMENT_DEFINITIONS)
+    base = (
+        "Each continuous interval where a person performs a distinct "
+        "manipulation action. "
+    )
+    definitions["segment_definitions"][0]["description"] = base + vocabulary_prompt(ctx)
+    return definitions
+
+
 class PegasusSegmentInference(Inference):
     name = "pegasus_segment"
     version = 1
     TIMEOUT = 600.0
 
-    def build_prompt(self, ctx: JobContext) -> str:
-        return (
-            "Segment this video into intervals of distinct human manipulation actions. "
-            + vocabulary_prompt(ctx)
-        )
-
     def infer(self, meta: VideoMeta, ctx: JobContext) -> list[dict]:
         payload = call_analyze(
             ctx.video_path,
-            prompt=self.build_prompt(ctx),
-            response_format=SEGMENT_DEFINITIONS,
+            response_format=_segment_definitions(ctx),
             analysis_mode="time_based_metadata",
             timeout=self.TIMEOUT,
             api_key=get_settings().twelvelabs_api_key,

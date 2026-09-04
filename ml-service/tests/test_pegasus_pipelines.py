@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.inference import get_pipeline
 from app.inference.base import JobContext, VideoMeta
 from app.inference.pegasus import PegasusAnalyzeInference, PegasusSegmentInference
+from app.inference.pegasus.segment import _segment_definitions
 
 
 def test_pipelines_are_registered():
@@ -21,16 +22,20 @@ def test_prompts_carry_the_project_vocabulary():
     ctx = JobContext(
         job_id="j", video_id="v", s3_key="", action_types=["alpha"], objects=["thing"]
     )
-    for cls in (PegasusAnalyzeInference, PegasusSegmentInference):
-        text = cls().build_prompt(ctx)
-        assert "alpha" in text, cls.name
-        assert "thing" in text, cls.name
+    text = PegasusAnalyzeInference().build_prompt(ctx)
+    assert "alpha" in text
+    assert "thing" in text
+    definitions = _segment_definitions(ctx)
+    description = definitions["segment_definitions"][0]["description"]
+    assert "alpha" in description
+    assert "thing" in description
 
 
 def test_prompts_stay_open_without_a_vocabulary():
     ctx = JobContext(job_id="j", video_id="v", s3_key="")
-    for cls in (PegasusAnalyzeInference, PegasusSegmentInference):
-        assert "pour" in cls().build_prompt(ctx), cls.name
+    assert "pour" in PegasusAnalyzeInference().build_prompt(ctx)
+    definitions = _segment_definitions(ctx)
+    assert "pour" in definitions["segment_definitions"][0]["description"]
 
 
 def test_analyze_pipeline_calls_with_correct_mode_and_format(monkeypatch):
@@ -71,7 +76,15 @@ def test_segment_pipeline_calls_with_correct_mode_and_format(monkeypatch):
 
     def fake_analyze(video_path, **kwargs):
         call_args.update(kwargs)
-        return {"id": "human_action", "segments": [{"action_type": "pour", "object": "cup", "start": 1.0, "end": 2.0}]}
+        return {
+            "human_action": [
+                {
+                    "start_time": 1.0,
+                    "end_time": 2.0,
+                    "metadata": {"action_type": "pour", "object": "cup"},
+                }
+            ]
+        }
 
     # Monkeypatch call_analyze in the segment module
     import app.inference.pegasus.segment
@@ -86,7 +99,10 @@ def test_segment_pipeline_calls_with_correct_mode_and_format(monkeypatch):
     assert call_args["analysis_mode"] == "time_based_metadata"
     assert call_args["response_format"]["type"] == "segment_definitions"
     assert call_args["timeout"] == 600.0
-    assert "Segment" in call_args["prompt"]
+    # SME mode rejects the prompt parameter; the instructions live in the description
+    assert "prompt" not in call_args
+    description = call_args["response_format"]["segment_definitions"][0]["description"]
+    assert "Each continuous interval" in description
 
     # Verify output segments satisfy the contract
     assert len(segments) == 1
@@ -126,12 +142,20 @@ def test_analyze_pipeline_includes_vocabulary_in_api_call(monkeypatch):
 
 
 def test_segment_pipeline_includes_vocabulary_in_api_call(monkeypatch):
-    """Verify segment pipeline includes project vocabulary in the API prompt."""
+    """Verify segment pipeline folds the project vocabulary into the definitions."""
     call_args = {}
 
     def fake_analyze(video_path, **kwargs):
         call_args.update(kwargs)
-        return {"id": "human_action", "segments": [{"action_type": "stir", "object": "pot", "start": 0.5, "end": 1.5}]}
+        return {
+            "human_action": [
+                {
+                    "start_time": 0.5,
+                    "end_time": 1.5,
+                    "metadata": {"action_type": "stir", "object": "pot"},
+                }
+            ]
+        }
 
     import app.inference.pegasus.segment
     monkeypatch.setattr(app.inference.pegasus.segment, "call_analyze", fake_analyze)
@@ -144,10 +168,11 @@ def test_segment_pipeline_includes_vocabulary_in_api_call(monkeypatch):
     pipeline = PegasusSegmentInference()
     segments = pipeline.infer(meta, ctx)
 
-    # Verify vocabulary labels are in the prompt
-    prompt = call_args["prompt"]
-    assert "stir" in prompt
-    assert "pour" in prompt
-    assert "pot" in prompt
-    assert "cup" in prompt
+    # Verify vocabulary labels are in the segment description, not the prompt
+    assert "prompt" not in call_args
+    description = call_args["response_format"]["segment_definitions"][0]["description"]
+    assert "stir" in description
+    assert "pour" in description
+    assert "pot" in description
+    assert "cup" in description
     assert len(segments) == 1
