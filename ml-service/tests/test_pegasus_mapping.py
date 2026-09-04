@@ -96,10 +96,19 @@ def test_to_segments_clips_to_duration():
 
 
 def test_to_segments_skips_clamping_when_duration_unknown():
-    raw = [{"action": "a", "object": "", "start": 1.0, "end": 99.0}]
-    seg = to_segments(raw, duration=0.0)[0]
-    assert seg["start"] == 1.0
-    assert seg["end"] == 99.0
+    raw = [
+        {"action": "a", "object": "", "start": 1.0, "end": 99.0},
+        {"action": "b", "object": "", "start": -5.0, "end": 50.0},
+    ]
+    segs = to_segments(raw, duration=0.0)
+    # b's negative start is still clamped to 0.0 (outside the duration guard),
+    # so it sorts first. a's end=99.0 stays unclamped (inside the guard).
+    assert segs[0]["action"] == "b"
+    assert segs[0]["start"] == 0.0
+    assert segs[0]["end"] == 50.0
+    assert segs[1]["action"] == "a"
+    assert segs[1]["start"] == 1.0
+    assert segs[1]["end"] == 99.0
 
 
 @pytest.mark.parametrize(
