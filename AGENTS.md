@@ -67,6 +67,20 @@ that touches media.
 
 If you add such a block, add the command to the list above.
 
+New tests are written with pytest and live in `ml-service/tests/`. They run inside
+the container from `/app`, so the `app` package is importable without a
+`conftest.py`:
+
+```bash
+docker compose exec ml-service python -m pytest tests/ -q
+```
+
+The two conventions coexist deliberately: existing `__main__` self-tests stay where
+they are, new tests go to `tests/`. Note that the listed
+`docker compose exec ml-service python -m app.inference` does **not** run —
+`app/inference/` is a package without a `__main__.py`, so the block at the bottom of
+its `__init__.py` is unreachable and its assertions are not covered anywhere.
+
 ---
 
 ## Architecture invariants
