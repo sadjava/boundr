@@ -41,6 +41,7 @@ docker compose exec ml-service grep -c "<a string from your edit>" <path/inside/
 |---|---|
 | Frontend | http://localhost:3000 |
 | API docs (Swagger) | http://localhost:8000/docs |
+| Marlin llama.cpp API | http://localhost:8085 |
 | MinIO console | http://localhost:9001 |
 | Adminer | http://localhost:8080 |
 | Redis Commander | http://localhost:8081 |
@@ -74,6 +75,8 @@ invariants. Run them directly:
 docker compose exec backend python -m app.segment       # annotation coercion rules
 docker compose exec backend python -m app.labels        # vocabulary normalisation
 docker compose exec ml-service python -m app.inference  # every registered pipeline
+docker compose exec ml-service python -m app.inference.marlin.infer
+docker compose exec ml-service python -m app.inference.marlin.postprocess
 ```
 
 Each prints `ok` on success. Follow this pattern for new pure-logic modules: no network,
@@ -164,9 +167,9 @@ genuinely different — add a package, so old results stay reproducible.
 `overlap`, `dense` and `sequential` are stubs that return synthetic segments with a
 correct structure. They exist to exercise the loop and are staying — they let you test
 the queue without spending an API call. The real pipelines are the two MVP branches:
-`pegasus_analyze` / `pegasus_segment` (implemented) and `marlin2b` (in preparation on a
-separate branch). Expect more: the registry is the scaling point, so adding a model means
-adding a package, never editing an existing one.
+`pegasus_analyze` / `pegasus_segment` and `marlin` (implemented). Expect more: the
+registry is the scaling point, so adding a model means adding a package, never editing
+an existing one.
 
 ### Steps
 
@@ -226,7 +229,8 @@ splitting the package.
   case** — do not treat it as an error or substitute a default list without saying so.
 - **`ctx.video_path` is a real local file** already downloaded from S3. Use
   `extract_frames(ctx.video_path, dest_dir, fps=...)` for frames; it shells out to ffmpeg
-  and returns sorted jpeg paths. Clean up temporary directories yourself.
+  and returns sorted jpeg paths. Clean up temporary directories yourself. Marlin is the
+  narrow exception: its server accepts video, so its package creates one sampled FFV1 clip.
 - **Bump `version` when output changes meaningfully.** The backend reads it from
   `GET /inference/{name}` on the ML service and stores it with the result.
 - **Raise on failure.** The consumer catches exceptions, reports `FAILED` with the
@@ -342,9 +346,6 @@ Things that have already cost time here.
 - **Two S3 clients, on purpose.** `internal_s3()` for server-side calls,
   `public_s3()` for signing URLs the browser will use. Signing with the internal
   hostname produces URLs the browser cannot resolve.
-- **`POST /jobs` on the ML service hardcodes `pipeline: "overlap"`.** The real path is
-  the backend's own producer in `queue.py`, which passes the requested pipeline. That
-  endpoint is a debugging convenience and lies about pipeline selection.
 - **Enum changes need `ALTER TYPE`.** Adding a value to `VideoStatus`, `JobStatus` or
   `AnnotationStatus` in Python without a migration will fail at runtime, not at startup.
 - **No hot reload, and `restart` is not enough.** Both Python services run without

@@ -11,6 +11,7 @@ flowchart TB
     RD[["Redis Stream<br/>ML job queue"]]
     S3[("S3 / MinIO<br/>videos · artifacts")]
     ML["ML Service<br/>consumer + HTTP API"]
+    MAR["Marlin llama.cpp<br/>local GPU"]
 
     UI -->|REST| BE
     UI -.->|"presigned URL<br/>video goes direct"| S3
@@ -19,6 +20,7 @@ flowchart TB
     BE -->|presigned URL| S3
     RD -->|XREADGROUP| ML
     ML -->|download| S3
+    ML -->|OpenAI-compatible API| MAR
     ML -->|"status callbacks<br/>/api/internal/jobs/*"| BE
 ```
 
@@ -56,9 +58,10 @@ unverified — material for dataset quality.
 
 ## 3. ML pipelines in the MVP
 
-Two pipelines are being prepared for the MVP, in parallel and independently. Both take a
-video and emit the same contract JSON, so the product does not depend on which one a
-project uses — the pipeline is chosen by name per job.
+Two pipeline implementations are available for the MVP. Both take a video and emit the
+same contract JSON, so the product does not depend on which one a project uses — the
+pipeline is chosen by name per job. The default Compose deployment waits for the local
+Marlin server because Marlin is selected by default.
 
 ```mermaid
 flowchart LR
@@ -76,14 +79,12 @@ flowchart LR
     PP --> KF
     KF --> OUT["contract JSON"]
 
-    style M stroke-dasharray: 5 5
 ```
 
-**`marlin2b` (dashed — in preparation).** The open video-VLM
+**`marlin` (implemented and default).** The open video-VLM
 [`NemoStation/Marlin-2B`](https://huggingface.co/NemoStation/Marlin-2B) (Apache 2.0) runs
 locally: no external API, no per-clip cost, no geo-blocking. It emits events with
-second-precise timestamps in one pass. Sampling is 2 FPS, which bounds boundary precision
-at roughly 0.5 s.
+second-precise timestamps in one pass. Sampling is 2 FPS up to a 120-second input limit.
 
 **`pegasus_analyze` / `pegasus_segment` (implemented).** A hosted TwelveLabs model, one
 package with two modes: `general` with a `json_schema` response and a real `prompt`, and
@@ -92,8 +93,8 @@ parameter — there the whole prompt lives in the segment definition description
 practice the two trade off against each other: SME segments more finely, `general`
 reasons over the whole clip and picks better verbs.
 
-The two branches are deliberately not merged. They fail for unrelated reasons — a local
-model against a hosted API — so keeping both is the cheapest insurance available.
+The implementations remain separate because they fail for unrelated reasons: Marlin is
+a local GPU service, while Pegasus is a hosted API.
 
 ### The extension point
 
@@ -105,7 +106,7 @@ flowchart LR
     JOB["job<br/>pipeline: name"] --> REG{{"PIPELINES<br/>registry"}}
     REG --> O["overlap · dense<br/>sequential<br/>(stubs)"]
     REG --> PG["pegasus_analyze<br/>pegasus_segment"]
-    REG --> MR["marlin2b"]
+    REG --> MR["marlin"]
     REG --> NEXT["...<br/>next model"]
 
     O --> BASE["Inference.run()<br/>ffprobe, contract shape"]
@@ -114,13 +115,11 @@ flowchart LR
     NEXT --> BASE
     BASE --> OUT["contract JSON"]
 
-    style MR stroke-dasharray: 5 5
     style NEXT stroke-dasharray: 5 5
 ```
 
-Adding a model touches neither the backend nor the frontend: they know a pipeline name
-and a version integer, nothing more. This has already been exercised — Pegasus was added
-without a single change outside `ml-service`.
+Model behavior stays behind `Inference`; the backend and frontend expose only its name
+and version.
 
 **Dropped: the TW-FINCH hybrid.** Earlier plans routed embeddings through TW-FINCH
 clustering with temporal weighting to get boundaries, then attached names with a separate
@@ -142,17 +141,16 @@ flowchart LR
     end
     subgraph INF["Inference"]
         D1["pegasus_analyze<br/>pegasus_segment<br/>real model"]
-        D2["marlin2b<br/>in preparation"]
+        D2["marlin<br/>real local model"]
         D3["overlap · dense · sequential<br/>synthetic segments"]
     end
     C --> INF --> E
 
-    style D2 stroke-dasharray: 5 5
 ```
 
-The Pegasus pipelines are real inference: the video is uploaded to TwelveLabs, analysed,
-and the reply is mapped onto the contract. `marlin2b` is being prepared on a separate
-branch. The three original pipelines remain as stubs — they return synthetic segments
+The Pegasus pipelines upload video to TwelveLabs and map the reply onto the contract.
+Marlin runs locally through llama.cpp and deterministically parses its timed captions.
+The three original pipelines remain as stubs — they return synthetic segments
 with a correct structure and the right duration, reading real metadata through `ffprobe`,
 so the whole file-handling path stays exercised without spending an API call. They are
 useful for testing the loop and are not scheduled for removal.

@@ -53,6 +53,8 @@ ML Service
     +-- postprocessing
     +-- save result
     +-- notify Backend
+    |
+    +-- Marlin llama.cpp server (local GPU)
 ```
 
 Docker Compose services:
@@ -61,6 +63,7 @@ Docker Compose services:
 frontend
 backend
 ml-service
+marlin-server
 postgres
 redis
 minio
@@ -250,6 +253,15 @@ GET  /health
 `POST /jobs` does NOT run inference synchronously. It only adds a job to Redis and returns `202 Accepted`.
 
 Actual processing happens in the Redis consumer inside the same `ml-service` container.
+
+### Marlin pipeline
+
+The default `marlin` pipeline samples up to 120 seconds at 2 FPS, sends a temporary
+lossless clip to the local llama.cpp server, and converts its timed English captions
+into the annotation contract. The model weights live in `./models/marlin/`, outside
+the containers and Git. Inputs longer than 120 seconds fail before encoding or GPU
+inference. See [marlin-llamacpp.md](marlin-llamacpp.md) for the pinned build and measured
+settings.
 
 ### Pegasus pipelines and external APIs
 

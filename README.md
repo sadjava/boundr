@@ -10,11 +10,11 @@ export to JSON or CSV.
 The point is not to remove the annotator from the loop. It is to change their job from
 *producing* an annotation to *checking* one — which is where the time savings come from.
 
-**Status:** the end-to-end product loop works — auth, projects, upload, queue, editor,
-export. The inference step currently runs a stub that returns correctly shaped
-segments; real models are being selected in a separate research repository and plug in
-behind a single interface. See [Project overview](docs/project-overview.md) for an
-honest account of what is and is not done.
+**Status:** the end-to-end product loop works — auth, projects, upload, queue, real
+Marlin and Pegasus inference, editor, and export. Synthetic pipelines remain available
+for testing the loop without running a model. See
+[Project overview](docs/project-overview.md) for an honest account of what is and is
+not measured.
 
 ---
 
@@ -25,10 +25,15 @@ cp .env.example .env
 docker compose up -d
 ```
 
+The default Marlin pipeline requires an NVIDIA GPU, CUDA-capable Docker runtime, and
+about 5.5 GiB for weights. The first start downloads them into the automatically created,
+Git-ignored `./models/marlin/` directory.
+
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
 | API docs | http://localhost:8000/docs |
+| Marlin llama.cpp API | http://localhost:8085 |
 | MinIO console | http://localhost:9001 |
 | Adminer (database) | http://localhost:8080 |
 | Redis Commander (queue) | http://localhost:8081 |
@@ -58,6 +63,8 @@ Backend (FastAPI)
 Redis Stream ──► ML Service (consumer + HTTP API)
                   download from S3 → ffmpeg → inference → post-processing
                   → store result → callback to Backend
+                                │
+                                └──► Marlin llama.cpp server (local GPU)
 ```
 
 Five rules the design rests on:
@@ -85,13 +92,13 @@ Details: [docs/architecture.md](docs/architecture.md).
 backend/      FastAPI service — API, auth, persistence, export
 frontend/     React + TypeScript UI — timeline, annotation editor
 ml-service/   Redis consumer + inference pipelines
-infra/        MinIO CORS configuration
+infra/        MinIO CORS and Marlin llama.cpp image
 docs/         Project, product and engineering documentation
 ```
 
-Inference pipelines live in `ml-service/app/inference/<name>/infer.py`. Adding one
-means implementing a single `infer()` method on the `Inference` base class — no backend
-or frontend changes required.
+Inference pipelines live in `ml-service/app/inference/<name>/infer.py`. Model logic is
+implemented behind `Inference.infer()`; its public name is then exposed by the backend
+and frontend pipeline lists.
 
 ---
 
@@ -170,6 +177,10 @@ The `pegasus_analyze` and `pegasus_segment` pipelines require a TwelveLabs API k
 Register at https://playground.twelvelabs.io, copy the key from Dashboard → API Key,
 and set it in `.env` as `TWELVELABS_API_KEY`. Without the key, Pegasus jobs will fail
 with an explicit message, but other pipelines work normally.
+
+Marlin is the default pipeline. It accepts videos up to 120 seconds and runs through
+the local llama.cpp service; detailed setup and measured behavior are in
+[docs/marlin-llamacpp.md](docs/marlin-llamacpp.md).
 
 ---
 
