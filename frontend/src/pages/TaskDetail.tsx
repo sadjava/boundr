@@ -21,7 +21,7 @@ export default function TaskDetail() {
   const [includeVideos, setIncludeVideos] = useState(false);
   const [formats, setFormats] = useState<ExportFormats>({ json: true, csv: false });
   const [exporting, setExporting] = useState(false);
-  const [pipeline, setPipeline] = useState("overlap");
+  const [pipeline, setPipeline] = useState("marlin");
   const [inference, setInference] = useState<InferenceType[]>(INFERENCE_TYPES);
   const [running, setRunning] = useState(false);
   const [pending, setPending] = useState<{ kind: "task" } | { kind: "video"; video: Video } | null>(null);

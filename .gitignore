@@ -22,3 +22,5 @@ eval/reports/
 eval/data/
 eval/reports/
 eval/.venv/
+/models/
+/datasets/

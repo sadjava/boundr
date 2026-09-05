@@ -1,0 +1,29 @@
+diff --git a/tools/mtmd/mtmd-helper.cpp b/tools/mtmd/mtmd-helper.cpp
+index dc2ab41..8318e63 100644
+--- a/tools/mtmd/mtmd-helper.cpp
++++ b/tools/mtmd/mtmd-helper.cpp
+@@ -18,0 +19 @@
++#include <cstdlib>
+@@ -797,0 +799,2 @@ struct mtmd_helper_video {
++        const bool qwen_video_format = std::getenv("LLAMA_QWEN_VIDEO_FORMAT") != nullptr;
++
+@@ -813 +815 @@ struct mtmd_helper_video {
+-            if (!prompt_start.empty()) {
++            if (!qwen_video_format && !prompt_start.empty()) {
+@@ -818,0 +821,13 @@ struct mtmd_helper_video {
++        if (qwen_video_format && timestamp_interval_ms > 0 && (info.n_frames < 0 || current_frame < info.n_frames)) {
++            const float elapsed_ms = (float) current_frame / info.fps * 1000.0f;
++            if (elapsed_ms >= next_timestamp_ms) {
++                const int frames_per_interval = std::max(1, (int) (info.fps * timestamp_interval_ms / 1000.0f + 0.5f));
++                const float midpoint_s = ((float) current_frame + (frames_per_interval - 1) / 2.0f) / info.fps;
++                char ts_buf[32];
++                snprintf(ts_buf, sizeof(ts_buf), "<%.1f seconds>", midpoint_s);
++                *out_text = strdup(ts_buf);
++                next_timestamp_ms += (float) timestamp_interval_ms;
++                return *out_text ? 0 : -2;
++            }
++        }
++
+@@ -823 +838 @@ struct mtmd_helper_video {
+-        if (timestamp_interval_ms > 0) {
++        if (!qwen_video_format && timestamp_interval_ms > 0) {

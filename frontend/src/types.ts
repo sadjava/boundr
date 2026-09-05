@@ -96,6 +96,7 @@ export interface InferenceType {
 }
 
 export const INFERENCE_TYPES: InferenceType[] = [
+  { id: "marlin", name: "Marlin 2B", description: "GPU video captioning through llama.cpp" },
   { id: "overlap", name: "Overlap", description: "Concurrent actions that overlap in time" },
   { id: "sequential", name: "Sequential", description: "Non-overlapping actions, one after another" },
   { id: "dense", name: "Dense", description: "Shorter windows with more overlap" },

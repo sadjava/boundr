@@ -124,6 +124,54 @@ services:
       retries: 10
       start_period: 15s
 
+  marlin-server:
+    build:
+      context: ./infra/marlin-server
+      args:
+        CUDA_ARCH: ${CUDA_ARCH:-}
+    gpus: all
+    environment:
+      LLAMA_CACHE: /models
+      LLAMA_ARG_HOST: 0.0.0.0
+    volumes:
+      - type: bind
+        source: ${MARLIN_MODELS_DIR:-./models/marlin}
+        target: /models
+        bind:
+          create_host_path: true
+    command:
+      - --model-url
+      - https://huggingface.co/jadeonrails/marlin-2b-gguf/resolve/7adc757f40191098ac3c5f286847a20088d1f6ac/marlin-2b-text.gguf
+      - --model
+      - /models/marlin-2b-text.gguf
+      - --mmproj-url
+      - https://huggingface.co/jadeonrails/marlin-2b-gguf/resolve/7adc757f40191098ac3c5f286847a20088d1f6ac/marlin-2b.gguf
+      - --mmproj
+      - /models/marlin-2b.gguf
+      - --alias
+      - marlin-2b
+      - -ngl
+      - "99"
+      - --video-fps
+      - "2"
+      - --image-max-tokens
+      - "192"
+      - --ctx-size
+      - "32768"
+      - --video-timestamp-interval
+      - "1000"
+      - --no-cache-prompt
+      - --port
+      - "8085"
+    ports:
+      - "127.0.0.1:${MARLIN_PORT:-8085}:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30m
+
   ml-service:
     build: ./ml-service
     depends_on:
@@ -135,6 +183,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      marlin-server:
+        condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379/0
       REDIS_STREAM: ml-jobs
@@ -146,8 +196,9 @@ services:
       S3_REGION: us-east-1
       BACKEND_URL: http://backend:8000
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-secret}
-      PIPELINE: stub
+      PIPELINE: marlin
       TWELVELABS_API_KEY: ${TWELVELABS_API_KEY:-}
+      MARLIN_URL: http://marlin-server:8085/v1/chat/completions
       DATABASE_URL: postgresql://${POSTGRES_USER:-boundr}:${POSTGRES_PASSWORD:-boundr}@postgres:5432/${POSTGRES_DB:-boundr}
     ports:
       - "8001:8001"

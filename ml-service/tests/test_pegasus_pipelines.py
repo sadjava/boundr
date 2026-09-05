@@ -102,7 +102,7 @@ def test_segment_pipeline_calls_with_correct_mode_and_format(monkeypatch):
     # SME mode rejects the prompt parameter; the instructions live in the description
     assert "prompt" not in call_args
     description = call_args["response_format"]["segment_definitions"][0]["description"]
-    assert "Each continuous interval" in description
+    assert "One atomic manipulation action" in description
 
     # Verify output segments satisfy the contract
     assert len(segments) == 1

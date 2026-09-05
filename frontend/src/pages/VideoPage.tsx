@@ -64,7 +64,7 @@ export default function VideoPage() {
   const [saving, setSaving] = useState(false);
   const [uploadingAnn, setUploadingAnn] = useState(false);
   const [running, setRunning] = useState(false);
-  const [pipeline, setPipeline] = useState("overlap");
+  const [pipeline, setPipeline] = useState("marlin");
   const [inference, setInference] = useState<InferenceType[]>(INFERENCE_TYPES);
   const draggingRef = useRef(false);
   const dataRef = useRef(data);

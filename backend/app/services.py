@@ -233,10 +233,12 @@ def create_and_enqueue_job(
     job = latest_job(db, video.id)
     if job is not None and job.status in {JobStatus.QUEUED, JobStatus.PROCESSING}:
         if job.status == JobStatus.QUEUED and requeue_if_queued:
-            enqueue_job(str(job.id), str(video.id), video.s3_key, pipeline, str(video.project_id))
+            enqueue_job(str(job.id), str(video.id), video.s3_key, job.pipeline, str(video.project_id))
         return job
 
-    ver = pipeline_version(pipeline)
+    # Marlin's parsed labels depend on mutable project catalogs,
+    # which are not part of the cache key.
+    ver = pipeline_version(pipeline) if pipeline != "marlin" else None
     cached = get_inference(db, video.id, pipeline, ver) if ver is not None else None
     if cached is not None:
         return apply_cached_inference(db, video, cached)

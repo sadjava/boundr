@@ -400,7 +400,7 @@ def process_task(
     user: User = Depends(get_current_user),
 ) -> ProcessTaskOut:
     task = get_task_for_user(db, task_id, user)
-    pipeline = (body.pipeline if body else "overlap") or "overlap"
+    pipeline = (body.pipeline if body else "marlin") or "marlin"
     known = {item["id"] for item in INFERENCE_TYPES}
     if pipeline not in known:
         raise HTTPException(

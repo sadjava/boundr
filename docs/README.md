@@ -61,10 +61,10 @@ clustering branch is not part of the MVP.
 queue with states and callbacks, per-pipeline result storage, timeline editor, validated
 JSON and CSV export.
 
-**In progress:** the two MVP pipelines. `pegasus_analyze` / `pegasus_segment` are real
-inference and run in the service; `marlin2b` is being prepared on a separate branch. The
-original `overlap` / `dense` / `sequential` pipelines stay as stubs for exercising the
-loop. Still open: ground truth for computing metrics.
+**Implemented:** `marlin`, `pegasus_analyze`, and `pegasus_segment` run real inference.
+The original `overlap` / `dense` / `sequential` pipelines stay as stubs for exercising
+the loop. Still open: a representative benchmark aligned with Boundr's target taxonomy
+and granularity.
 
 **Not measured:** step-level F1, temporal boundary error, action and object accuracy,
 actual reduction in manual work, per-clip processing cost. We do not quote these numbers

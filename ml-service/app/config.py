@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     backend_url: str = "http://localhost:8000"
     internal_api_token: str = "internal-secret"
-    pipeline: str = "stub"
+    pipeline: str = "marlin"
+    marlin_url: str = "http://localhost:8085/v1/chat/completions"
     database_url: str = "postgresql://boundr:boundr@localhost:5432/boundr"
     twelvelabs_api_key: str = ""
 
