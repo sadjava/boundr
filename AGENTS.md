@@ -97,6 +97,17 @@ they are, new tests go to `tests/`. Note that the listed
 `app/inference/` is a package without a `__main__.py`, so the block at the bottom of
 its `__init__.py` is unreachable and its assertions are not covered anywhere.
 
+Annotation quality is measured by a standalone script outside Docker. It compares
+predicted annotations with reference ones and checks them against the case
+thresholds — see [eval/README.md](eval/README.md). Its own suite is pytest:
+
+```bash
+cd eval && python -m pytest tests/ -q
+```
+
+`eval/assets/` holds synthetic annotations used to exercise the script end to end;
+`eval/data/` is for real data and is not tracked.
+
 ---
 
 ## Architecture invariants
@@ -277,6 +288,7 @@ documentation is worse than none: it is trusted and then it lies. In particular:
 | Services, queue, job lifecycle, API | [docs/architecture.md](docs/architecture.md), [docs/diagrams.md](docs/diagrams.md) |
 | Inference pipelines or the ML approach | [docs/project-overview.md](docs/project-overview.md) §4–5 |
 | Export format | [docs/data-examples/](docs/data-examples/) |
+| Metrics, matching rules, the judge | [eval/README.md](eval/README.md) |
 | UI colours, components, states | [docs/design_spec.md](docs/design_spec.md) |
 | Setup, ports, commands | [README.md](README.md) and this file |
 

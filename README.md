@@ -16,6 +16,19 @@ segments; real models are being selected in a separate research repository and p
 behind a single interface. See [Project overview](docs/project-overview.md) for an
 honest account of what is and is not done.
 
+Annotation quality is measured by a standalone script outside Docker: it matches
+predicted segments against reference ones and reports step-level F1, boundary error
+and label accuracy against the case thresholds. Synthetic examples ship in
+`eval/assets/`, so it can be tried without any data of your own:
+
+```bash
+cd eval && python -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python eval.py --pred assets/pred --gt assets/gt --out-dir reports --no-judge
+```
+
+See [eval/README.md](eval/README.md) for the scoring rules and the LLM judge that
+accepts synonymous labels.
+
 ---
 
 ## Quick start
