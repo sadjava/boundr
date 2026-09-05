@@ -1,0 +1,31 @@
+{
+  "video_id": "5e4159b0-991d-5442-8ca7-193aa5655708",
+  "duration": 11.0,
+  "fps": 30.0,
+  "segments": [
+    {
+      "id": "clip_04_merged-0",
+      "start": 0.0,
+      "end": 6.0,
+      "action": "open",
+      "object": "jar",
+      "keyframe": 3.0
+    },
+    {
+      "id": "clip_04_merged-1",
+      "start": 6.0,
+      "end": 9.0,
+      "action": "close",
+      "object": "jar",
+      "keyframe": 7.5
+    },
+    {
+      "id": "clip_04_merged-2",
+      "start": 9.0,
+      "end": 11.0,
+      "action": "wipe",
+      "object": "table",
+      "keyframe": 10.0
+    }
+  ]
+}

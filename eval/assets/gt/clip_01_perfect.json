@@ -1,0 +1,31 @@
+{
+  "video_id": "3942be5f-e79c-5b17-8119-f1310a458adb",
+  "duration": 8.0,
+  "fps": 30.0,
+  "segments": [
+    {
+      "id": "clip_01_perfect-0",
+      "start": 0.0,
+      "end": 2.4,
+      "action": "open",
+      "object": "drawer",
+      "keyframe": 1.2
+    },
+    {
+      "id": "clip_01_perfect-1",
+      "start": 2.4,
+      "end": 5.1,
+      "action": "take",
+      "object": "knife",
+      "keyframe": 3.75
+    },
+    {
+      "id": "clip_01_perfect-2",
+      "start": 5.1,
+      "end": 8.0,
+      "action": "close",
+      "object": "drawer",
+      "keyframe": 6.55
+    }
+  ]
+}

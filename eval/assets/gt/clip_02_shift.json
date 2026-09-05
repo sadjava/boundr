@@ -1,0 +1,31 @@
+{
+  "video_id": "f8524820-31a4-5118-896e-024336399d1b",
+  "duration": 10.0,
+  "fps": 30.0,
+  "segments": [
+    {
+      "id": "clip_02_shift-0",
+      "start": 0.0,
+      "end": 3.0,
+      "action": "open",
+      "object": "fridge",
+      "keyframe": 1.5
+    },
+    {
+      "id": "clip_02_shift-1",
+      "start": 3.0,
+      "end": 6.5,
+      "action": "take",
+      "object": "bottle",
+      "keyframe": 4.75
+    },
+    {
+      "id": "clip_02_shift-2",
+      "start": 6.5,
+      "end": 10.0,
+      "action": "close",
+      "object": "fridge",
+      "keyframe": 8.25
+    }
+  ]
+}

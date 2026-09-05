@@ -1,0 +1,23 @@
+{
+  "video_id": "b63cf1f6-71ca-57d5-bbed-78b4f0238926",
+  "duration": 12.0,
+  "fps": 30.0,
+  "segments": [
+    {
+      "id": "clip_05_wide-0",
+      "start": 0.0,
+      "end": 5.0,
+      "action": "cut",
+      "object": "bread",
+      "keyframe": 2.5
+    },
+    {
+      "id": "clip_05_wide-1",
+      "start": 5.0,
+      "end": 12.0,
+      "action": "spread",
+      "object": "butter",
+      "keyframe": 8.5
+    }
+  ]
+}

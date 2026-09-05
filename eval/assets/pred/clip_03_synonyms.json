@@ -1,0 +1,31 @@
+{
+  "video_id": "cb33898e-bdad-5796-8ac0-bcdc8c4eed15",
+  "duration": 12.0,
+  "fps": 30.0,
+  "segments": [
+    {
+      "id": "clip_03_synonyms-0",
+      "start": 0.0,
+      "end": 4.0,
+      "action": "grab",
+      "object": "mug",
+      "keyframe": 2.0
+    },
+    {
+      "id": "clip_03_synonyms-1",
+      "start": 4.0,
+      "end": 9.0,
+      "action": "washing",
+      "object": "cup",
+      "keyframe": 6.5
+    },
+    {
+      "id": "clip_03_synonyms-2",
+      "start": 9.0,
+      "end": 12.0,
+      "action": "place",
+      "object": "shelf",
+      "keyframe": 10.5
+    }
+  ]
+}
