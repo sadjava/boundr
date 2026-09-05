@@ -54,54 +54,79 @@ unverified — material for dataset quality.
 
 ---
 
-## 3. ML pipeline: hybrid configuration
+## 3. ML pipelines in the MVP
+
+Two pipelines are being prepared for the MVP, in parallel and independently. Both take a
+video and emit the same contract JSON, so the product does not depend on which one a
+project uses — the pipeline is chosen by name per job.
 
 ```mermaid
 flowchart LR
-    V["video 5–30 s"] --> FF["ffmpeg<br/>normalise, fps 16"]
-    FF --> EMB["embeddings<br/>sliding window"]
-    EMB --> CACHE[("feature cache<br/>.npz")]
-    EMB --> SEG["TW-FINCH<br/>clustering with<br/>temporal weighting"]
-    SEG --> POST["post-processing<br/>merge short segments"]
-    POST --> LBL["multimodal LLM<br/>action and object names"]
-    LBL --> KF["keyframe selection"]
-    KF --> OUT["contract JSON"]
+    V["video 5-30 s"] --> FF["ffmpeg / ffprobe<br/>duration, fps, frames"]
 
-    style LBL stroke-dasharray: 5 5
-```
-
-The dashed block is the one blocked by external API access (Gemini geo-blocking, balance
-requirements). Everything else is implemented and has been run. For an alternative to that
-block with no external APIs, see 3b.
-
-**Division of labour between tracks (in the hybrid):** segmentation supplies accurate
-temporal boundaries — it sees transitions in motion and invents nothing. The LLM attaches
-names to finished intervals, which segmentation cannot do by construction
-(`action="segment"`, `object="cluster_N"`).
-
----
-
-## 3b. Alternative: one model instead of a pipeline
-
-```mermaid
-flowchart LR
-    V["video 5–30 s"] --> FF["ffmpeg<br/>2 FPS, ≤448×448"]
     FF --> M["Marlin-2B<br/>dense captioning<br/>+ temporal grounding"]
+    FF --> P["TwelveLabs Pegasus<br/>hosted video LLM"]
+
     M --> PARSE["parse events[]<br/>start / end / description"]
-    PARSE --> MAP["map description<br/>→ action + object"]
+    PARSE --> MAP["map description<br/>-> action + object"]
+
+    P --> PP["parse json_schema<br/>or segment_definitions"]
+
     MAP --> KF["keyframe selection"]
+    PP --> KF
     KF --> OUT["contract JSON"]
 
-    style M stroke:#DCC3AA
+    style M stroke-dasharray: 5 5
 ```
 
-The open video-VLM Marlin-2B (Apache 2.0) emits events with second-precise timestamps in
-a single pass, potentially replacing the whole "embeddings → clustering → LLM labelling"
-chain. A trial run has been performed; quality on our task is unmeasured.
+**`marlin2b` (dashed — in preparation).** The open video-VLM
+[`NemoStation/Marlin-2B`](https://huggingface.co/NemoStation/Marlin-2B) (Apache 2.0) runs
+locally: no external API, no per-clip cost, no geo-blocking. It emits events with
+second-precise timestamps in one pass. Sampling is 2 FPS, which bounds boundary precision
+at roughly 0.5 s.
 
-The fork is settled by one run against ground truth: if Marlin's boundaries land within
-2 s, this scheme wins; if not, the hybrid from §3 stays, with Marlin supplying names only.
-Both variants write the same JSON, so the product does not depend on the choice.
+**`pegasus_analyze` / `pegasus_segment` (implemented).** A hosted TwelveLabs model, one
+package with two modes: `general` with a `json_schema` response and a real `prompt`, and
+`time_based_metadata` (SME) which segments the video itself and rejects the `prompt`
+parameter — there the whole prompt lives in the segment definition description. In
+practice the two trade off against each other: SME segments more finely, `general`
+reasons over the whole clip and picks better verbs.
+
+The two branches are deliberately not merged. They fail for unrelated reasons — a local
+model against a hosted API — so keeping both is the cheapest insurance available.
+
+### The extension point
+
+Neither branch is privileged. A pipeline is a package under `ml-service/app/inference/`
+implementing one `infer()` method, registered by name:
+
+```mermaid
+flowchart LR
+    JOB["job<br/>pipeline: name"] --> REG{{"PIPELINES<br/>registry"}}
+    REG --> O["overlap · dense<br/>sequential<br/>(stubs)"]
+    REG --> PG["pegasus_analyze<br/>pegasus_segment"]
+    REG --> MR["marlin2b"]
+    REG --> NEXT["...<br/>next model"]
+
+    O --> BASE["Inference.run()<br/>ffprobe, contract shape"]
+    PG --> BASE
+    MR --> BASE
+    NEXT --> BASE
+    BASE --> OUT["contract JSON"]
+
+    style MR stroke-dasharray: 5 5
+    style NEXT stroke-dasharray: 5 5
+```
+
+Adding a model touches neither the backend nor the frontend: they know a pipeline name
+and a version integer, nothing more. This has already been exercised — Pegasus was added
+without a single change outside `ml-service`.
+
+**Dropped: the TW-FINCH hybrid.** Earlier plans routed embeddings through TW-FINCH
+clustering with temporal weighting to get boundaries, then attached names with a separate
+LLM call. That chain is not part of the MVP. Both surviving pipelines produce boundaries
+and labels in one pass, which makes the segmentation-plus-labelling split redundant. The
+research behind it is recorded in the project overview, §6.
 
 ---
 
@@ -109,24 +134,28 @@ Both variants write the same JSON, so the product does not depend on the choice.
 
 ```mermaid
 flowchart LR
-    subgraph GREEN["✅ Real loop"]
+    subgraph GREEN["Real loop"]
         A["Upload<br/>presigned S3"] --> B["Queue<br/>Redis Streams"]
         B --> C["States<br/>and callbacks"]
         E["Contract<br/>validation"] --> F["Editor<br/>timeline"]
         F --> G["Export<br/>JSON / CSV"]
     end
-    subgraph YELLOW["🟡 Stub"]
-        D["Inference<br/>mock_segments"]
+    subgraph INF["Inference"]
+        D1["pegasus_analyze<br/>pegasus_segment<br/>real model"]
+        D2["marlin2b<br/>in preparation"]
+        D3["overlap · dense · sequential<br/>synthetic segments"]
     end
-    C --> D --> E
+    C --> INF --> E
+
+    style D2 stroke-dasharray: 5 5
 ```
 
-The stub returns segments with a correct structure and the right duration — it reads real
-video metadata through `ffprobe` and extracts a frame through `ffmpeg`, so the whole
-file-handling path is exercised — but the content is synthetic.
-
-Replacing the stub with a real model means implementing one `infer()` method on the
-abstract `Inference` class. Neither the backend nor the frontend changes.
+The Pegasus pipelines are real inference: the video is uploaded to TwelveLabs, analysed,
+and the reply is mapped onto the contract. `marlin2b` is being prepared on a separate
+branch. The three original pipelines remain as stubs — they return synthetic segments
+with a correct structure and the right duration, reading real metadata through `ffprobe`,
+so the whole file-handling path stays exercised without spending an API call. They are
+useful for testing the loop and are not scheduled for removal.
 
 ---
 

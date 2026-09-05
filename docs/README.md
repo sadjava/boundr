@@ -48,7 +48,8 @@ All five are in Russian.
 Model selection and segmentation experiments live in a separate repository,
 `itmo-action-markup-exp`: data extraction, LLM provider clients, local segmentation,
 video overlays, TW-FINCH diagnostics and tests. Results and conclusions are summarised
-in the project overview, §6.
+in the project overview, §6. This is a record of how the approach was chosen: the
+clustering branch is not part of the MVP.
 
 ---
 
@@ -58,8 +59,10 @@ in the project overview, §6.
 queue with states and callbacks, per-pipeline result storage, timeline editor, validated
 JSON and CSV export.
 
-**In progress:** real inference in the service (currently a stub with a correct contract),
-action and object labelling, ground truth for computing metrics.
+**In progress:** the two MVP pipelines. `pegasus_analyze` / `pegasus_segment` are real
+inference and run in the service; `marlin2b` is being prepared on a separate branch. The
+original `overlap` / `dense` / `sequential` pipelines stay as stubs for exercising the
+loop. Still open: ground truth for computing metrics.
 
 **Not measured:** step-level F1, temporal boundary error, action and object accuracy,
 actual reduction in manual work, per-clip processing cost. We do not quote these numbers

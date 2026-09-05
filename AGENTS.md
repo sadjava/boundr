@@ -161,9 +161,12 @@ frontend/src/
 anywhere else, and do not extend an existing pipeline in place when the behaviour is
 genuinely different — add a package, so old results stay reproducible.
 
-The three current pipelines (`overlap`, `dense`, `sequential`) are stubs that return
-synthetic segments with a correct structure. They exist to exercise the loop; replacing
-them with real models is the point of the abstraction, not a departure from it.
+`overlap`, `dense` and `sequential` are stubs that return synthetic segments with a
+correct structure. They exist to exercise the loop and are staying — they let you test
+the queue without spending an API call. The real pipelines are the two MVP branches:
+`pegasus_analyze` / `pegasus_segment` (implemented) and `marlin2b` (in preparation on a
+separate branch). Expect more: the registry is the scaling point, so adding a model means
+adding a package, never editing an existing one.
 
 ### Steps
 
