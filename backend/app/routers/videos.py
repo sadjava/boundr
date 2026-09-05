@@ -156,7 +156,7 @@ def process_video(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Video has not finished uploading",
         )
-    pipeline = (body.pipeline if body else "overlap") or "overlap"
+    pipeline = (body.pipeline if body else "marlin") or "marlin"
     known = {item["id"] for item in INFERENCE_TYPES}
     if pipeline not in known:
         raise HTTPException(

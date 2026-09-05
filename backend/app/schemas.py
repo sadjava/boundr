@@ -165,7 +165,7 @@ class VideoOut(BaseModel):
 
 
 class ProcessIn(BaseModel):
-    pipeline: str = "overlap"
+    pipeline: str = "marlin"
 
 
 class ProcessTaskOut(BaseModel):
@@ -173,6 +173,11 @@ class ProcessTaskOut(BaseModel):
 
 
 INFERENCE_TYPES = [
+    {
+        "id": "marlin",
+        "name": "Marlin 2B",
+        "description": "GPU video captioning through llama.cpp",
+    },
     {
         "id": "overlap",
         "name": "Overlap",

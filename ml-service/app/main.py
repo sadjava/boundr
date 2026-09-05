@@ -52,7 +52,7 @@ def enqueue_job(body: JobIn) -> dict:
             "job_id": body.job_id,
             "video_id": body.video_id,
             "s3_key": body.s3_key,
-            "pipeline": "overlap",
+            "pipeline": settings.pipeline,
             "project_id": body.project_id,
         },
     )
