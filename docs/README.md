@@ -13,6 +13,7 @@ maintained in one language only — there are no parallel translations to drift 
 | Document | What is in it |
 |---|---|
 | [Project overview](project-overview.md) 🇷🇺 | The single most complete document: problem, approach, what is built, results, limitations, roadmap, team |
+| [ML System Design Doc](ml-system-design.md) 🇷🇺 | The same project in the standard ML system design template: goals, methodology, data and evaluation splits, pilot, deployment, throughput, security, costs. Mostly cross-references the documents below |
 
 ---
 
@@ -31,7 +32,7 @@ maintained in one language only — there are no parallel translations to drift 
 
 ## Product
 
-All five are in Russian.
+All six are in Russian.
 
 | Document | What is in it |
 |---|---|
@@ -40,6 +41,7 @@ All five are in Russian.
 | [03. Границы MVP и пользовательский сценарий](product/03.%20Границы%20MVP%20и%20пользовательский%20сценарий.md) | What is in and out of the MVP, the scenario step by step, product-to-code trace |
 | [04. Критерии успеха](product/04.%20Критерии%20успеха.md) | Case metrics, our product metrics, the speed-up measurement protocol |
 | [05. Допущения, риски и план проверки](product/05.%20Допущения,%20риски%20и%20план%20проверки.md) | Seven assumptions, risks by category, verification plan, AI Product contribution |
+| [06. Анализ конкурентов](product/06.%20Анализ%20конкурентов.md) | CVAT, Label Studio, Supervisely, LabelMe, TwelveLabs Pegasus: self-hosting, temporal action labelling, VLM auto-annotation |
 
 ---
 
