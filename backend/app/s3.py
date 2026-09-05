@@ -58,6 +58,20 @@ def presigned_get_url(key: str) -> str:
     )
 
 
+def put_bytes(key: str, body: bytes, content_type: str = "application/octet-stream") -> None:
+    internal_s3().put_object(
+        Bucket=settings.s3_bucket,
+        Key=key,
+        Body=body,
+        ContentType=content_type,
+    )
+
+
+def get_bytes(key: str) -> bytes:
+    resp = internal_s3().get_object(Bucket=settings.s3_bucket, Key=key)
+    return resp["Body"].read()
+
+
 def delete_object(key: str) -> None:
     try:
         internal_s3().delete_object(Bucket=settings.s3_bucket, Key=key)

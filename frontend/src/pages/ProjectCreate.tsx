@@ -116,7 +116,7 @@ export default function ProjectCreate() {
       </p>
       <form onSubmit={onSubmit} className="grid gap-5">
         <label className="block text-sm">
-          Name
+          Name <span className="text-[var(--color-accent)]">*</span>
           <input className="field" value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
         <label className="block text-sm">

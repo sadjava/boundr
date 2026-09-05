@@ -74,6 +74,36 @@ class ProjectOut(BaseModel):
         )
 
 
+class TaskCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+class TaskUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class TaskOut(BaseModel):
+    id: uuid.UUID
+    project_id: uuid.UUID
+    name: str
+    video_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_task(cls, task, video_count: int = 0) -> TaskOut:
+        return cls(
+            id=task.id,
+            project_id=task.project_id,
+            name=task.name,
+            video_count=video_count,
+            created_at=task.created_at,
+            updated_at=task.updated_at,
+        )
+
+
 class VideoCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     content_type: str = "video/mp4"
@@ -118,6 +148,7 @@ class JobOut(BaseModel):
 class VideoOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
+    task_id: uuid.UUID
     name: str
     s3_key: str
     status: str
@@ -135,6 +166,10 @@ class VideoOut(BaseModel):
 
 class ProcessIn(BaseModel):
     pipeline: str = "overlap"
+
+
+class ProcessTaskOut(BaseModel):
+    queued: int
 
 
 INFERENCE_TYPES = [

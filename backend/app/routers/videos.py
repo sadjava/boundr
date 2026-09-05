@@ -3,19 +3,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Job, User, Video, VideoStatus, utcnow
+from app.models import Job, User, Video, VideoStatus
 from app.s3 import (
     annotation_s3_key,
     delete_object,
     object_exists,
     presigned_get_url,
     presigned_put_url,
-    video_s3_key,
 )
 from app.schemas import INFERENCE_TYPES, JobOut, ProcessIn, VideoCreate, VideoOut
 from app.security import get_current_user
 from app.services import (
     create_and_enqueue_job,
+    create_video_row,
+    first_or_create_task,
     get_project_for_user,
     get_video_for_user,
     latest_job,
@@ -43,6 +44,7 @@ def _to_video_out(
     return VideoOut(
         id=video.id,
         project_id=video.project_id,
+        task_id=video.task_id,
         name=video.name,
         s3_key=video.s3_key,
         status=video.status.value,
@@ -86,16 +88,8 @@ def create_video(
     user: User = Depends(get_current_user),
 ) -> VideoOut:
     project = get_project_for_user(db, project_id, user)
-    video = Video(
-        project_id=project.id,
-        name=body.name,
-        s3_key="",
-        status=VideoStatus.UPLOADING,
-    )
-    db.add(video)
-    db.flush()
-    video.s3_key = video_s3_key(str(project.id), str(video.id))
-    project.updated_at = utcnow()
+    task = first_or_create_task(db, project)
+    video = create_video_row(db, project, task, body.name)
     db.commit()
     db.refresh(video)
     return _to_video_out(db, video, include_upload=True, content_type=body.content_type)

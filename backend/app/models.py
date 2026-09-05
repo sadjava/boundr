@@ -65,7 +65,25 @@ class Project(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="projects")
+    tasks: Mapped[list[Task]] = relationship(back_populates="project", cascade="all, delete-orphan")
     videos: Mapped[list[Video]] = relationship(back_populates="project", cascade="all, delete-orphan")
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    project: Mapped[Project] = relationship(back_populates="tasks")
+    videos: Mapped[list[Video]] = relationship(back_populates="task", cascade="all, delete-orphan")
 
 
 class Video(Base):
@@ -74,6 +92,9 @@ class Video(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(255))
     s3_key: Mapped[str] = mapped_column(String(512))
@@ -87,6 +108,7 @@ class Video(Base):
     )
 
     project: Mapped[Project] = relationship(back_populates="videos")
+    task: Mapped[Task] = relationship(back_populates="videos")
     jobs: Mapped[list[Job]] = relationship(back_populates="video", cascade="all, delete-orphan")
     inferences: Mapped[list["Inference"]] = relationship(
         back_populates="video", cascade="all, delete-orphan"

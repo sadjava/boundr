@@ -293,7 +293,7 @@ export default function Timeline({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-1 flex">
+      <div className="mb-1 flex gap-2">
         <div className="flex w-80 shrink-0 gap-1.5 px-3">
           <span className="min-w-0 flex-1 text-xs text-[var(--color-muted)]">action type</span>
           <span className="min-w-0 flex-1 text-xs text-[var(--color-muted)]">object</span>
@@ -320,8 +320,39 @@ export default function Timeline({
           }}
         >
           {ticks(dur).map((t) => (
-            <span key={t}>{t.toFixed(0)}s</span>
+            <span key={t} className="pointer-events-none">
+              {t.toFixed(0)}s
+            </span>
           ))}
+          <div
+            className="pointer-events-none absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-[var(--color-accent)]"
+            style={{ left: `${playhead}%` }}
+            aria-hidden
+          />
+          <button
+            type="button"
+            className="absolute top-1/2 z-10 flex h-5 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-start justify-center border-0 bg-transparent p-0"
+            style={{ left: `${playhead}%` }}
+            aria-label="Playhead"
+            title="Drag playhead"
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const ruler = e.currentTarget.parentElement;
+              if (!ruler) return;
+              ruler.setPointerCapture(e.pointerId);
+              onDragStart?.();
+              const rect = ruler.getBoundingClientRect();
+              const t = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+              onSeek(t * dur);
+            }}
+          >
+            <span
+              className="mt-0.5 block h-0 w-0 border-x-[6px] border-t-[8px] border-x-transparent border-t-[var(--color-accent)]"
+              aria-hidden
+            />
+          </button>
         </div>
         <div className="w-24 shrink-0" />
       </div>
@@ -423,10 +454,6 @@ export default function Timeline({
               >
                 <div
                   className="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-[var(--color-accent)]"
-                  style={{ left: `${playhead}%` }}
-                />
-                <div
-                  className="absolute -top-1 -translate-x-1/2 border-x-4 border-t-[6px] border-x-transparent border-t-[var(--color-accent)]"
                   style={{ left: `${playhead}%` }}
                 />
               </div>

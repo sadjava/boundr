@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { api, downloadProjectExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
+import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
 import type { Project } from "../types";
-
-type SortKey = "created_desc" | "created_asc" | "updated_desc" | "updated_asc";
 
 function fmt(iso: string) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -13,10 +13,14 @@ function fmt(iso: string) {
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortKey>("created_desc");
+  const [sort, setSort] = useState<SortState>({ field: "created", dir: "desc" });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exportingProject, setExportingProject] = useState<Project | null>(null);
+  const [includeVideos, setIncludeVideos] = useState(false);
+  const [formats, setFormats] = useState<ExportFormats>({ json: true, csv: false });
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     setProjects(await api.get<Project[]>("/api/projects"));
@@ -34,14 +38,7 @@ export default function Projects() {
             p.name.toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q),
         )
       : projects;
-    const copy = [...filtered];
-    copy.sort((a, b) => {
-      if (sort === "created_asc") return a.created_at.localeCompare(b.created_at);
-      if (sort === "created_desc") return b.created_at.localeCompare(a.created_at);
-      if (sort === "updated_asc") return a.updated_at.localeCompare(b.updated_at);
-      return b.updated_at.localeCompare(a.updated_at);
-    });
-    return copy;
+    return sortByDates(filtered, sort);
   }, [projects, query, sort]);
 
   async function remove() {
@@ -67,26 +64,13 @@ export default function Projects() {
           New project
         </Link>
       </div>
-      <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <label className="block text-sm">
-          Search
-          <input
-            className="field"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Name or description"
-          />
-        </label>
-        <label className="block text-sm">
-          Sort
-          <select className="field" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-            <option value="created_desc">Created (newest)</option>
-            <option value="created_asc">Created (oldest)</option>
-            <option value="updated_desc">Updated (newest)</option>
-            <option value="updated_asc">Updated (oldest)</option>
-          </select>
-        </label>
-      </div>
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        sort={sort}
+        onSort={setSort}
+        placeholder="Name or description"
+      />
       {error && <p className="text-[var(--color-bad)]">{error}</p>}
       <div className="grid gap-3">
         {visible.length === 0 && (
@@ -111,6 +95,16 @@ export default function Projects() {
                 Created {fmt(p.created_at)} · Updated {fmt(p.updated_at)}
               </div>
             </Link>
+            <button
+              className="btn btn-ghost"
+              onClick={() => {
+                setIncludeVideos(false);
+                setFormats({ json: true, csv: false });
+                setExportingProject(p);
+              }}
+            >
+              Export
+            </button>
             <button className="btn btn-danger" onClick={() => setPending(p)}>
               Delete
             </button>
@@ -124,6 +118,35 @@ export default function Projects() {
           busy={deleting}
           onCancel={() => setPending(null)}
           onConfirm={remove}
+        />
+      )}
+      {exportingProject && (
+        <ExportDialog
+          title="Export project?"
+          body={`Download “${exportingProject.name}” as a zip of its tasks.`}
+          includeVideos={includeVideos}
+          onIncludeVideos={setIncludeVideos}
+          formats={formats}
+          onFormats={setFormats}
+          busy={exporting}
+          onCancel={() => !exporting && setExportingProject(null)}
+          onConfirm={async () => {
+            setExporting(true);
+            setError(null);
+            try {
+              await downloadProjectExport(
+                exportingProject.id,
+                includeVideos,
+                formats,
+                `${exportingProject.name}.zip`,
+              );
+              setExportingProject(null);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Export failed");
+            } finally {
+              setExporting(false);
+            }
+          }}
         />
       )}
     </div>

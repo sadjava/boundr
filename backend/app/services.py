@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.annotation_io import parse_annotation_payload
 from app.models import (
     Annotation,
     AnnotationStatus,
@@ -13,11 +14,13 @@ from app.models import (
     Job,
     JobStatus,
     Project,
+    Task,
     User,
     Video,
     VideoStatus,
     utcnow,
 )
+from app.s3 import video_s3_key
 from app.queue import enqueue_job
 
 
@@ -37,6 +40,66 @@ def get_project_for_user(db: Session, project_id, user: User) -> Project:
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return project
+
+
+def get_task_for_user(db: Session, task_id, user: User) -> Task:
+    task = db.scalar(
+        select(Task)
+        .join(Project, Task.project_id == Project.id)
+        .where(Task.id == task_id, Project.user_id == user.id)
+    )
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return task
+
+
+def first_or_create_task(db: Session, project: Project, name: str = "Default") -> Task:
+    task = db.scalar(
+        select(Task).where(Task.project_id == project.id).order_by(Task.created_at.asc()).limit(1)
+    )
+    if task is not None:
+        return task
+    task = Task(project_id=project.id, name=name)
+    db.add(task)
+    db.flush()
+    return task
+
+
+def create_video_row(db: Session, project: Project, task: Task, name: str) -> Video:
+    video = Video(
+        project_id=project.id,
+        task_id=task.id,
+        name=name,
+        s3_key="",
+        status=VideoStatus.UPLOADING,
+    )
+    db.add(video)
+    db.flush()
+    video.s3_key = video_s3_key(str(project.id), str(video.id))
+    project.updated_at = utcnow()
+    task.updated_at = utcnow()
+    return video
+
+
+def apply_user_annotation(db: Session, video: Video, raw: dict) -> Annotation:
+    payload = parse_annotation_payload(raw, str(video.id), video.duration)
+    annotation = db.query(Annotation).filter(Annotation.video_id == video.id).one_or_none()
+    if annotation is None:
+        annotation = Annotation(
+            video_id=video.id,
+            data=payload,
+            version=1,
+            status=AnnotationStatus.EDITED,
+        )
+        db.add(annotation)
+    else:
+        annotation.data = payload
+        annotation.version += 1
+        annotation.status = AnnotationStatus.EDITED
+    duration = payload.get("duration")
+    if duration:
+        video.duration = float(duration)
+    return annotation
 
 
 def get_video_for_user(db: Session, video_id, user: User) -> Video:
@@ -59,13 +122,13 @@ def latest_job(db: Session, video_id) -> Job | None:
 def neighbor_ids(db: Session, video: Video) -> tuple:
     prev_id = db.scalar(
         select(Video.id)
-        .where(Video.project_id == video.project_id, Video.created_at < video.created_at)
+        .where(Video.task_id == video.task_id, Video.created_at < video.created_at)
         .order_by(Video.created_at.desc())
         .limit(1)
     )
     next_id = db.scalar(
         select(Video.id)
-        .where(Video.project_id == video.project_id, Video.created_at > video.created_at)
+        .where(Video.task_id == video.task_id, Video.created_at > video.created_at)
         .order_by(Video.created_at.asc())
         .limit(1)
     )

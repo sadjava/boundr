@@ -36,9 +36,19 @@ export interface Job {
   error_msg: string | null;
 }
 
+export interface Task {
+  id: string;
+  project_id: string;
+  name: string;
+  video_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Video {
   id: string;
   project_id: string;
+  task_id: string;
   name: string;
   s3_key: string;
   status: VideoStatus;

@@ -37,6 +37,7 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined }),
+  postForm: <T>(path: string, body: FormData) => request<T>(path, { method: "POST", body }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) =>
@@ -44,9 +45,9 @@ export const api = {
   delete: (path: string) => request<void>(path, { method: "DELETE" }),
 };
 
-export async function downloadExport(videoId: string, format: "json" | "csv", filename: string) {
+async function downloadBlob(path: string, filename: string) {
   const token = getToken();
-  const res = await fetch(`/api/videos/${videoId}/export?format=${format}`, {
+  const res = await fetch(path, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) throw new Error("Export failed");
@@ -57,4 +58,39 @@ export async function downloadExport(videoId: string, format: "json" | "csv", fi
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export async function downloadExport(videoId: string, format: "json" | "csv", filename: string) {
+  await downloadBlob(`/api/videos/${videoId}/export?format=${format}`, filename);
+}
+
+function formatsQuery(formats: { json: boolean; csv: boolean }) {
+  const parts: string[] = [];
+  if (formats.json) parts.push("json");
+  if (formats.csv) parts.push("csv");
+  return parts.join(",") || "json";
+}
+
+export async function downloadTaskExport(
+  taskId: string,
+  includeVideos: boolean,
+  formats: { json: boolean; csv: boolean },
+  filename: string,
+) {
+  await downloadBlob(
+    `/api/tasks/${taskId}/export?include_videos=${includeVideos}&formats=${formatsQuery(formats)}`,
+    filename,
+  );
+}
+
+export async function downloadProjectExport(
+  projectId: string,
+  includeVideos: boolean,
+  formats: { json: boolean; csv: boolean },
+  filename: string,
+) {
+  await downloadBlob(
+    `/api/projects/${projectId}/export?include_videos=${includeVideos}&formats=${formatsQuery(formats)}`,
+    filename,
+  );
 }

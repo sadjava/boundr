@@ -4,6 +4,8 @@ export default function ConfirmDialog({
   title,
   body,
   confirmLabel = "Delete",
+  busyLabel,
+  variant = "danger",
   busy,
   onCancel,
   onConfirm,
@@ -11,6 +13,8 @@ export default function ConfirmDialog({
   title: string;
   body: string;
   confirmLabel?: string;
+  busyLabel?: string;
+  variant?: "danger" | "primary";
   busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -47,8 +51,13 @@ export default function ConfirmDialog({
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-danger-solid" disabled={busy} autoFocus>
-            {busy ? "Deleting…" : confirmLabel}
+          <button
+            type="submit"
+            className={`btn ${variant === "danger" ? "btn-danger-solid" : "btn-primary"}`}
+            disabled={busy}
+            autoFocus
+          >
+            {busy ? busyLabel || (variant === "danger" ? "Deleting…" : "Working…") : confirmLabel}
           </button>
         </div>
       </form>

@@ -62,6 +62,7 @@ export default function VideoPage() {
   const [videoAR, setVideoAR] = useState(16 / 9);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingAnn, setUploadingAnn] = useState(false);
   const [running, setRunning] = useState(false);
   const [pipeline, setPipeline] = useState("overlap");
   const [inference, setInference] = useState<InferenceType[]>(INFERENCE_TYPES);
@@ -84,7 +85,12 @@ export default function VideoPage() {
   const loadVideo = useCallback(async () => {
     if (!id) return;
     const v = await api.get<Video>(`/api/videos/${id}`);
-    setVideo(v);
+    // Presigned URLs change every poll; keep the same src so the player doesn't reload.
+    setVideo((prev) =>
+      prev && prev.s3_key === v.s3_key && prev.playback_url
+        ? { ...v, playback_url: prev.playback_url }
+        : v,
+    );
     try {
       const project = await api.get<Project>(`/api/projects/${v.project_id}`);
       setActionTypes(project.action_types || []);
@@ -92,6 +98,8 @@ export default function VideoPage() {
     } catch {
       /* keep defaults */
     }
+    // Don't clobber in-progress edits while the model is still running.
+    if (["QUEUED", "PROCESSING"].includes(v.status)) return;
     try {
       const ann = await api.get<Annotation>(`/api/videos/${id}/annotation`);
       setAnnotation(ann);
@@ -265,6 +273,24 @@ export default function VideoPage() {
     }
   }
 
+  async function uploadAnnotation(file: File) {
+    if (!id) return;
+    setUploadingAnn(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const saved = await api.postForm<Annotation>(`/api/videos/${id}/annotation/upload`, fd);
+      setAnnotation(saved);
+      setData({ ...saved.data, segments: saved.data.segments.map(coerceSegment) });
+      setSelectedId(saved.data.segments[0]?.id ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Annotation upload failed");
+    } finally {
+      setUploadingAnn(false);
+    }
+  }
+
   async function runModel() {
     if (!id) return;
     setRunning(true);
@@ -326,7 +352,7 @@ export default function VideoPage() {
     setError(null);
     try {
       await api.delete(`/api/videos/${video.id}`);
-      navigate(`/projects/${video.project_id}`);
+      navigate(`/tasks/${video.task_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
       setDeleting(false);
@@ -346,10 +372,10 @@ export default function VideoPage() {
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line)] px-5 py-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <Link
-            to={`/projects/${video.project_id}`}
+            to={`/tasks/${video.task_id}`}
             className="text-sm text-[var(--color-muted)] no-underline"
           >
-            ← Project
+            ← Task
           </Link>
           <h1 className="m-0 truncate text-base font-semibold">{video.name}</h1>
           <StatusBadge status={video.status} />
@@ -383,6 +409,20 @@ export default function VideoPage() {
           <button className="btn btn-ghost" disabled={saving || !data} onClick={save}>
             {saving ? "Saving…" : "Save"}
           </button>
+          <label className="btn btn-ghost cursor-pointer">
+            {uploadingAnn ? "Uploading…" : "Upload annotation"}
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              disabled={uploadingAnn}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) uploadAnnotation(file);
+              }}
+            />
+          </label>
           <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>
             Delete
           </button>

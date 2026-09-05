@@ -5,7 +5,11 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import ProjectCreate from "./pages/ProjectCreate";
 import ProjectDetail from "./pages/ProjectDetail";
+import ProjectImport from "./pages/ProjectImport";
 import Projects from "./pages/Projects";
+import TaskCreate from "./pages/TaskCreate";
+import TaskDetail from "./pages/TaskDetail";
+import TaskImport from "./pages/TaskImport";
 import VideoPage from "./pages/VideoPage";
 
 function Guard({ children }: { children: ReactNode }) {
@@ -30,7 +34,11 @@ export default function App() {
       >
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/new" element={<ProjectCreate />} />
+        <Route path="/projects/:id/tasks/new" element={<TaskCreate />} />
+        <Route path="/projects/:id/import" element={<ProjectImport />} />
         <Route path="/projects/:id" element={<ProjectDetail />} />
+        <Route path="/tasks/:id/import" element={<TaskImport />} />
+        <Route path="/tasks/:id" element={<TaskDetail />} />
         <Route path="/videos/:id" element={<VideoPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/projects" replace />} />
