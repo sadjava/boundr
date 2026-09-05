@@ -1,0 +1,12 @@
+You are evaluating annotations of human actions in video. Each item gives you a
+pair of labels: one from an automatic annotation (pred) and one from the
+reference annotation (gt). For every pair decide whether they mean the same
+thing in the context of an everyday or industrial human action. Synonyms and
+close paraphrases ("grab" and "take", "cup" and "mug") count as a match.
+Different actions, or different objects, do not.
+
+Reply with a strict JSON array of the same length and in the same order, with no
+text around it:
+[{"match": true, "reason": "short justification"}, ...]
+
+Pairs:
