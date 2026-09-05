@@ -1,6 +1,7 @@
 # AGENTS.md
 
 Working notes for coding agents in this repository. Read this before changing anything.
+`CLAUDE.md` is a symlink to this file — edit `AGENTS.md`, never the symlink.
 
 Boundr is a web application for automatic annotation of short human-action videos: a clip
 goes in, a draft annotation comes out, the user corrects it on a timeline and exports
@@ -15,10 +16,25 @@ Everything runs through Docker Compose. There is no local dev setup outside it.
 
 ```bash
 cp .env.example .env
-docker compose up -d                    # full stack
-docker compose up -d --build backend    # rebuild one service after changing deps
-docker compose logs -f ml-service       # follow a service
-docker compose restart backend          # code is not hot-reloaded; restart after edits
+docker compose up -d                       # full stack
+docker compose up -d --build ml-service    # apply any source change to one service
+docker compose logs -f ml-service          # follow a service
+```
+
+**`restart` does not apply code edits.** No service bind-mounts its source: `backend`,
+`ml-service` and `frontend` all have a bare `build:`, so the code is copied into the
+image at build time. `docker compose restart` brings the container back up from the
+*old* image and your change silently does not run. Always rebuild:
+
+```bash
+docker compose up -d --build <service>
+```
+
+After rebuilding, confirm the change actually landed before drawing conclusions from
+the behaviour — the failure mode here is invisible:
+
+```bash
+docker compose exec ml-service grep -c "<a string from your edit>" <path/inside/app>
 ```
 
 | Service | URL |
@@ -328,8 +344,11 @@ Things that have already cost time here.
   endpoint is a debugging convenience and lies about pipeline selection.
 - **Enum changes need `ALTER TYPE`.** Adding a value to `VideoStatus`, `JobStatus` or
   `AnnotationStatus` in Python without a migration will fail at runtime, not at startup.
-- **No hot reload.** Both Python services run without `--reload`; restart the container
-  after editing.
+- **No hot reload, and `restart` is not enough.** Both Python services run without
+  `--reload`, and neither mounts its source, so a restart re-runs the old image.
+  Rebuild with `docker compose up -d --build <service>`. This has already cost time:
+  a prompt change looked like it had no effect on the model output, when in fact the
+  container was still running the previous prompt.
 - **Pegasus jobs block the consumer for minutes.** The consumer reads with `count=1`,
   so videos are processed one at a time; the next job sits in `QUEUED` meanwhile.
   `TIMEOUT` is a class attribute on each pipeline, not a setting.
