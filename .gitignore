@@ -14,3 +14,11 @@ dist/
 .idea/
 .vscode/
 .superdesign/tmp/
+docs/superpowers/
+eval/.eval_cache.json
+eval/.venv/
+eval/.pytest_cache/
+eval/reports/
+eval/data/
+eval/reports/
+eval/.venv/
