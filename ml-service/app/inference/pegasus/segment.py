@@ -18,21 +18,36 @@ SEGMENT_DEFINITIONS = {
         {
             "id": "human_action",
             "description": (
-                "Each continuous interval where a person performs a distinct "
-                "manipulation action."
+                "One atomic manipulation action performed by a person: a single "
+                "verb applied to a single object. Start a new segment whenever the "
+                "verb changes, the manipulated object changes, the acting hand "
+                "changes, or the person grasps or releases something. Atomic actions "
+                "are short, typically between 0.3 and 3 seconds; an interval longer "
+                "than about 5 seconds almost certainly contains several actions and "
+                "must be split. Never return a high-level task or activity as one "
+                "segment: instead of a single 'make coffee' interval, return "
+                "'grasp cup', 'pour water', 'stir', 'place cup' as separate "
+                "segments. Segments may be adjacent or briefly overlap. Prefer more, "
+                "shorter segments over fewer, longer ones. "
             ),
             "fields": [
                 {
                     "name": "action_type",
                     "type": "string",
-                    "description": "Verb / action label for this interval, e.g. pour, push.",
+                    "description": (
+                        "A single lowercase verb for this interval, e.g. pour, push, "
+                        "grasp, lift, release. Exactly one verb: never a phrase with "
+                        "'and', never a task name such as 'cooking' or 'assembly'."
+                    ),
                 },
                 {
                     "name": "object",
                     "type": "string",
                     "description": (
-                        "Primary object involved in the action, e.g. cup, bottle. "
-                        "Leave empty if no object is identifiable."
+                        "The single object directly manipulated during this interval, "
+                        "e.g. cup, bottle. One object only; if the person manipulates "
+                        "another object, that is a separate segment. Leave empty if no "
+                        "object is identifiable."
                     ),
                 },
             ],
@@ -42,14 +57,10 @@ SEGMENT_DEFINITIONS = {
 
 
 def _segment_definitions(ctx: JobContext) -> dict:
-    """SEGMENT_DEFINITIONS with the vocabulary folded into the segment description.
+    """SEGMENT_DEFINITIONS with the vocabulary appended to the segment description.
     SME mode rejects the prompt parameter, so the description carries the prompting."""
     definitions = copy.deepcopy(SEGMENT_DEFINITIONS)
-    base = (
-        "Each continuous interval where a person performs a distinct "
-        "manipulation action. "
-    )
-    definitions["segment_definitions"][0]["description"] = base + vocabulary_prompt(ctx)
+    definitions["segment_definitions"][0]["description"] += vocabulary_prompt(ctx)
     return definitions
 
 
