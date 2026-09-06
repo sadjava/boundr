@@ -19,7 +19,21 @@ cp .env.example .env
 docker compose up -d                       # full stack
 docker compose up -d --build ml-service    # apply any source change to one service
 docker compose logs -f ml-service          # follow a service
+
+COMPOSE_PROFILES= docker compose up -d     # light run: no marlin, no fine-tune
 ```
+
+**`marlin-server` and `finetune-service` sit behind Compose profiles** (`marlin` and
+`finetune`), enabled by default through `COMPOSE_PROFILES=marlin,finetune` in
+`.env.example`. Clearing the variable gives a pegasus-only stack that neither compiles
+llama.cpp nor downloads weights — the escape hatch for machines without a GPU. An `.env`
+predating this (no `COMPOSE_PROFILES` line at all) silently gets the light stack; add
+the line.
+
+`ml-service` deliberately has **no** `depends_on` on `marlin-server`: Compose
+auto-enables the profile of a dependency, which would drag the CUDA build back into the
+light run too. The cost is that a `marlin*` job started without the profile fails at
+request time instead of being prevented at startup.
 
 **`restart` does not apply code edits.** No service bind-mounts its source: `backend`,
 `ml-service`, `finetune-service` and `frontend` all have a bare `build:`, so the code is
@@ -41,8 +55,8 @@ docker compose exec ml-service grep -c "<a string from your edit>" <path/inside/
 |---|---|
 | Frontend | http://localhost:3000 |
 | API docs (Swagger) | http://localhost:8000/docs |
-| Marlin llama.cpp API | http://localhost:8085 |
-| Fine-tune service health | http://localhost:8002/health |
+| Marlin llama.cpp API (profile `marlin`) | http://localhost:8085 |
+| Fine-tune service health (profile `finetune`) | http://localhost:8002/health |
 | MinIO console | http://localhost:9001 |
 | Adminer | http://localhost:8080 |
 | Redis Commander | http://localhost:8081 |

@@ -38,16 +38,29 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The default Marlin pipeline requires an NVIDIA GPU, CUDA-capable Docker runtime, and
-about 5.5 GiB for weights. The first start downloads them into the automatically created,
-Git-ignored `./models/marlin/` directory.
+This brings up the full stack, including Marlin and fine-tuning: `.env.example` ships
+`COMPOSE_PROFILES=marlin,finetune`. Marlin requires an NVIDIA GPU, a CUDA-capable Docker
+runtime, and about 5.5 GiB for weights; building `marlin-server` compiles llama.cpp. The
+first start downloads the weights into the automatically created, Git-ignored
+`./models/marlin/` directory.
+
+**Light run without Marlin and fine-tuning.** If there is no GPU, or you only need the
+TwelveLabs pipelines (`pegasus_analyze`, `pegasus_segment`), clear the profiles — nothing
+compiles llama.cpp and no weights are downloaded:
+
+```bash
+COMPOSE_PROFILES= docker compose up -d
+```
+
+Set `TWELVELABS_API_KEY` in `.env` for that mode. Selecting a `marlin*` pipeline while
+the profiles are off fails the job — the model server is simply not running.
 
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
 | API docs | http://localhost:8000/docs |
-| Marlin llama.cpp API | http://localhost:8085 |
-| Fine-tune service | http://localhost:8002/health |
+| Marlin llama.cpp API (profile `marlin`) | http://localhost:8085 |
+| Fine-tune service (profile `finetune`) | http://localhost:8002/health |
 | MinIO console | http://localhost:9001 |
 | Adminer (database) | http://localhost:8080 |
 | Redis Commander (queue) | http://localhost:8081 |

@@ -125,6 +125,7 @@ services:
       start_period: 15s
 
   marlin-server:
+    profiles: ["marlin"]
     build:
       context: ./infra/marlin-server
       args:
@@ -183,8 +184,6 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-      marlin-server:
-        condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379/0
       REDIS_STREAM: ml-jobs
@@ -215,6 +214,7 @@ services:
       start_period: 10s
 
   finetune-service:
+    profiles: ["finetune"]
     build: ./finetune-service
     depends_on:
       backend:
