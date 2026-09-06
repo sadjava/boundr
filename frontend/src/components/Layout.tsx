@@ -1,5 +1,14 @@
-import { Link, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
+
+function navClass({ isActive }: { isActive: boolean }) {
+  return [
+    "rounded-md px-4 py-2 text-base font-semibold no-underline transition-colors",
+    isActive
+      ? "bg-[var(--color-raised)] text-[var(--color-text)]"
+      : "text-[var(--color-muted)] hover:bg-[var(--color-raised)] hover:text-[var(--color-text)]",
+  ].join(" ");
+}
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -15,7 +24,15 @@ export default function Layout() {
           </span>
           <span className="text-sm font-semibold text-[var(--color-text)]">Boundr</span>
         </Link>
-        <div className="flex items-center gap-3 text-sm text-[var(--color-muted)]">
+        <div className="flex items-center gap-6 text-sm text-[var(--color-muted)]">
+          <nav className="flex items-center gap-5" aria-label="Main">
+            <NavLink to="/models" className={navClass}>
+              Models
+            </NavLink>
+            <NavLink to="/projects" className={navClass} end>
+              Projects
+            </NavLink>
+          </nav>
           <span>{user?.name}</span>
           <button
             className="btn btn-ghost py-1"

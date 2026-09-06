@@ -57,10 +57,9 @@ JSON_SCHEMA = {
 
 class PegasusAnalyzeInference(Inference):
     name = "pegasus_analyze"
-    version = 1
-    # Upper bound on the whole upload + analysis round trip. Kept here rather than in
-    # config: it is a property of this pipeline, not of the deployment.
-    TIMEOUT = 600.0
+    version = 2
+    # Product SLA: one video must finish within two minutes.
+    TIMEOUT = 120.0
 
     def build_prompt(self, ctx: JobContext) -> str:
         return (

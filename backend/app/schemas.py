@@ -111,6 +111,10 @@ class FineTuneCreate(BaseModel):
     name: str | None = Field(default=None, max_length=32)
 
 
+class FineTuneUpdate(BaseModel):
+    hidden: bool
+
+
 class FineTuneOut(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -118,9 +122,12 @@ class FineTuneOut(BaseModel):
     name: str
     display_name: str
     status: str
+    hidden: bool = False
     error_msg: str | None
     s3_prefix: str
     task_ids: list[uuid.UUID] = Field(default_factory=list)
+    project_name: str | None = None
+    task_names: list[str] = Field(default_factory=list)
     manifest: dict | None = None
     created_at: datetime
     started_at: datetime | None
@@ -129,7 +136,13 @@ class FineTuneOut(BaseModel):
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_fine_tune(cls, row) -> FineTuneOut:
+    def from_fine_tune(
+        cls,
+        row,
+        *,
+        project_name: str | None = None,
+        task_names: list[str] | None = None,
+    ) -> FineTuneOut:
         raw_ids = row.task_ids or []
         return cls(
             id=row.id,
@@ -138,9 +151,12 @@ class FineTuneOut(BaseModel):
             name=row.name,
             display_name=row.display_name,
             status=row.status.value if hasattr(row.status, "value") else str(row.status),
+            hidden=bool(getattr(row, "hidden", False)),
             error_msg=row.error_msg,
             s3_prefix=row.s3_prefix,
             task_ids=[uuid.UUID(str(t)) for t in raw_ids],
+            project_name=project_name,
+            task_names=list(task_names or []),
             manifest=row.manifest,
             created_at=row.created_at,
             started_at=row.started_at,

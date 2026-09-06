@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 import time
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.inference.pegasus.client import (
+    MAX_TOKENS,
     MAX_UPLOAD_BYTES,
     TwelveLabsError,
     _wait_for_task,
     analyze,
+    salvage_truncated_json,
     structured_payload,
 )
 
@@ -168,6 +171,45 @@ class TestStructuredPayload:
             structured_payload(task)
         assert "must be dict or list" in str(exc.value)
         assert "int" in str(exc.value)
+
+
+class TestSalvageTruncatedJson:
+    def test_valid_json_passes_through(self):
+        payload = {"actions": [{"action_type": "pour"}]}
+        assert salvage_truncated_json(json.dumps(payload)) == payload
+
+    def test_drops_incomplete_trailing_object(self):
+        text = (
+            '{"actions": [{"action_type": "pour", "start": 1.0, "end": 2.0},'
+            ' {"action_type": "stir"'
+        )
+        assert salvage_truncated_json(text) == {
+            "actions": [{"action_type": "pour", "start": 1.0, "end": 2.0}]
+        }
+
+    def test_salvages_sme_segment_array(self):
+        text = (
+            '{"human_action": [{"start_time": 0.5, "end_time": 1.5,'
+            ' "metadata": {"action_type": "pour", "object": "cup"}},'
+            ' {"start_time": 1.5, "end_time":'
+        )
+        assert salvage_truncated_json(text) == {
+            "human_action": [
+                {
+                    "start_time": 0.5,
+                    "end_time": 1.5,
+                    "metadata": {"action_type": "pour", "object": "cup"},
+                }
+            ]
+        }
+
+    def test_garbage_still_raises(self):
+        with pytest.raises(TwelveLabsError, match="not valid JSON"):
+            salvage_truncated_json("not valid json {broken[")
+
+    def test_truncated_before_any_object_raises(self):
+        with pytest.raises(TwelveLabsError, match="not valid JSON"):
+            salvage_truncated_json('{"actions": [{"action_type": "pou')
 
 
 class TestWaitForTask:
@@ -369,6 +411,7 @@ class TestAnalyze:
         assert kwargs["analysis_mode"] == "general"
         assert kwargs["response_format"] == {"type": "x"}
         assert kwargs["prompt"] == "p"
+        assert kwargs["max_tokens"] == MAX_TOKENS
 
     def test_asset_is_waited_on_before_task_creation(self, monkeypatch, tmp_path):
         client = self._ready_client()
@@ -426,21 +469,47 @@ class TestAnalyze:
             )
         client.assets.delete.assert_called_once_with(asset_id="asset1")
 
-    def test_finish_reason_length_raises(self, monkeypatch, tmp_path):
+    def test_finish_reason_length_returns_parsed_payload(self, monkeypatch, tmp_path):
         client = self._ready_client()
         client.analyze_async.tasks.retrieve.return_value = FakeResponse(
             {
                 "status": "ready",
                 "result": {
-                    "data": '{"actions": []}',
+                    "data": '{"actions": [{"action_type": "pour", "start": 1.0, "end": 2.0}]}',
                     "finish_reason": "length",
                 },
             }
         )
         path = self._install(monkeypatch, client, tmp_path)
-        with pytest.raises(TwelveLabsError, match="truncated"):
-            analyze(
-                path, prompt="p", response_format={}, analysis_mode="general",
-                timeout=60.0, api_key="k",
-            )
+        payload = analyze(
+            path, prompt="p", response_format={}, analysis_mode="general",
+            timeout=60.0, api_key="k",
+        )
+        assert payload == {
+            "actions": [{"action_type": "pour", "start": 1.0, "end": 2.0}]
+        }
+        client.assets.delete.assert_called_once_with(asset_id="asset1")
+
+    def test_finish_reason_length_salvages_truncated_array(self, monkeypatch, tmp_path):
+        client = self._ready_client()
+        client.analyze_async.tasks.retrieve.return_value = FakeResponse(
+            {
+                "status": "ready",
+                "result": {
+                    "data": (
+                        '{"actions": [{"action_type": "pour", "start": 1.0, "end": 2.0},'
+                        ' {"action_type": "stir"'
+                    ),
+                    "finish_reason": "length",
+                },
+            }
+        )
+        path = self._install(monkeypatch, client, tmp_path)
+        payload = analyze(
+            path, prompt="p", response_format={}, analysis_mode="general",
+            timeout=60.0, api_key="k",
+        )
+        assert payload == {
+            "actions": [{"action_type": "pour", "start": 1.0, "end": 2.0}]
+        }
         client.assets.delete.assert_called_once_with(asset_id="asset1")

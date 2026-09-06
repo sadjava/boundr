@@ -173,7 +173,7 @@ finetune-service/app/
   s3.py              Download videos / upload checkpoint artifacts
 
 frontend/src/
-  pages/             Login, Projects, ProjectCreate, ProjectDetail, TaskDetail, VideoPage
+  pages/             Login, Projects, ProjectCreate, ProjectDetail, TaskDetail, VideoPage, Models
   components/        Timeline, RangeSlider, Layout, StatusBadge, ConfirmDialog
   api.ts             Typed fetch wrapper, JWT handling, export download
   types.ts           Shared types — keep in sync with backend/app/schemas.py
@@ -379,9 +379,10 @@ Things that have already cost time here.
   Rebuild with `docker compose up -d --build <service>`. This has already cost time:
   a prompt change looked like it had no effect on the model output, when in fact the
   container was still running the previous prompt.
-- **Pegasus jobs block the consumer for minutes.** The consumer reads with `count=1`,
+- **Pegasus jobs block the consumer for up to two minutes.** The consumer reads with `count=1`,
   so videos are processed one at a time; the next job sits in `QUEUED` meanwhile.
-  `TIMEOUT` is a class attribute on each pipeline, not a setting. **Stop queue**
+  `TIMEOUT` is a class attribute on each pipeline, not a setting: Pegasus is 120s.
+  **Stop queue**
   (`POST /api/jobs/purge`) fails stuck jobs and trims Redis; it does not kill an
   in-flight `infer()`. Restart `ml-service` if a Pegasus/Marlin call is still running.
 - **`TWELVELABS_API_KEY` is required for the Pegasus pipelines.** Without it a job

@@ -22,10 +22,10 @@ from app.models import (
     VideoStatus,
     utcnow,
 )
-from app.s3 import fine_tune_s3_prefix, video_s3_key
+from app.s3 import delete_prefix, fine_tune_s3_prefix, video_s3_key
 from app.queue import enqueue_finetune, enqueue_job, flush_queue
 from app.finetune import default_display_name, default_fine_tune_name, validate_fine_tune_name
-from app.schemas import INFERENCE_TYPES
+from app.schemas import FineTuneOut, INFERENCE_TYPES
 
 
 def pipeline_version(pipeline: str) -> int | None:
@@ -326,6 +326,7 @@ def known_pipeline_ids(db: Session, user: User) -> set[str]:
         select(FineTune.name).where(
             FineTune.user_id == user.id,
             FineTune.status == FineTuneStatus.COMPLETED,
+            FineTune.hidden.is_(False),
         )
     ).all()
     known.update(ft_names)
@@ -336,7 +337,11 @@ def list_inference_for_user(db: Session, user: User) -> list[dict]:
     items = list(INFERENCE_TYPES)
     rows = db.scalars(
         select(FineTune)
-        .where(FineTune.user_id == user.id, FineTune.status == FineTuneStatus.COMPLETED)
+        .where(
+            FineTune.user_id == user.id,
+            FineTune.status == FineTuneStatus.COMPLETED,
+            FineTune.hidden.is_(False),
+        )
         .order_by(FineTune.created_at.desc())
     ).all()
     for row in rows:
@@ -357,6 +362,79 @@ def get_fine_tune_for_user(db: Session, fine_tune_id, user: User) -> FineTune:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fine-tune not found")
     return row
+
+
+def _fine_tune_enrichment(
+    db: Session, rows: list[FineTune]
+) -> dict:
+    """Map fine_tune.id → (project_name, task_names) preserving task_ids order."""
+    project_ids = {r.project_id for r in rows if r.project_id is not None}
+    projects = {
+        p.id: p.name
+        for p in db.scalars(select(Project).where(Project.id.in_(project_ids))).all()
+    } if project_ids else {}
+
+    all_task_ids: list = []
+    for r in rows:
+        all_task_ids.extend(r.task_ids or [])
+    tasks_by_id = {}
+    if all_task_ids:
+        for t in db.scalars(select(Task).where(Task.id.in_(all_task_ids))).all():
+            tasks_by_id[str(t.id)] = t.name
+
+    out: dict = {}
+    for r in rows:
+        names = [tasks_by_id[str(tid)] for tid in (r.task_ids or []) if str(tid) in tasks_by_id]
+        pname = projects.get(r.project_id) if r.project_id else None
+        out[r.id] = (pname, names)
+    return out
+
+
+def fine_tune_out(db: Session, row: FineTune) -> FineTuneOut:
+    enrich = _fine_tune_enrichment(db, [row])
+    project_name, task_names = enrich.get(row.id, (None, []))
+    return FineTuneOut.from_fine_tune(row, project_name=project_name, task_names=task_names)
+
+
+def fine_tunes_out(db: Session, rows: list[FineTune]) -> list[FineTuneOut]:
+    enrich = _fine_tune_enrichment(db, rows)
+    return [
+        FineTuneOut.from_fine_tune(
+            r,
+            project_name=enrich[r.id][0],
+            task_names=enrich[r.id][1],
+        )
+        for r in rows
+    ]
+
+
+def list_user_fine_tunes(db: Session, user: User) -> list[FineTune]:
+    return list(
+        db.scalars(
+            select(FineTune)
+            .where(FineTune.user_id == user.id)
+            .order_by(FineTune.created_at.desc())
+        )
+    )
+
+
+def set_fine_tune_hidden(db: Session, fine_tune: FineTune, hidden: bool) -> FineTune:
+    fine_tune.hidden = hidden
+    db.commit()
+    db.refresh(fine_tune)
+    return fine_tune
+
+
+def delete_fine_tune(db: Session, fine_tune: FineTune) -> None:
+    prefix = fine_tune.s3_prefix
+    db.delete(fine_tune)
+    db.commit()
+    if prefix:
+        try:
+            delete_prefix(prefix)
+        except Exception:
+            # ponytail: best-effort S3 cleanup; orphan prefix is cheaper than blocking delete
+            pass
 
 
 def create_and_enqueue_fine_tune(

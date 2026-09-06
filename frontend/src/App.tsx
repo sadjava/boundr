@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
+import Models from "./pages/Models";
 import ProjectCreate from "./pages/ProjectCreate";
 import ProjectDetail from "./pages/ProjectDetail";
 import ProjectImport from "./pages/ProjectImport";
@@ -33,6 +34,7 @@ export default function App() {
         }
       >
         <Route path="/projects" element={<Projects />} />
+        <Route path="/models" element={<Models />} />
         <Route path="/projects/new" element={<ProjectCreate />} />
         <Route path="/projects/:id/tasks/new" element={<TaskCreate />} />
         <Route path="/projects/:id/import" element={<ProjectImport />} />

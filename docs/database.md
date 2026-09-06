@@ -101,6 +101,7 @@ erDiagram
         varchar-32 name "UNIQUE with user_id"
         varchar-255 display_name
         fine_tune_status status "default QUEUED"
+        boolean hidden "default false"
         text error_msg "nullable"
         varchar-512 s3_prefix
         jsonb task_ids "default []"
@@ -244,6 +245,7 @@ appears in the Model menu after `COMPLETED`.
 | `name` | `varchar(32)` | UNIQUE with `user_id` | e.g. `marlin_ft_a3f21c` |
 | `display_name` | `varchar(255)` | NOT NULL | Shown in the picker |
 | `status` | `fine_tune_status` | NOT NULL, default `QUEUED` | |
+| `hidden` | `boolean` | NOT NULL, default `false` | When true, omitted from `GET /api/inference` |
 | `error_msg` | `text` | nullable | Traceback on failure |
 | `s3_prefix` | `varchar(512)` | NOT NULL | `users/{user_id}/models/{id}/` |
 | `task_ids` | `jsonb` | NOT NULL, default `'[]'` | Snapshot of selected task UUIDs |
@@ -307,6 +309,7 @@ deletion works whether it goes through the ORM or straight SQL.
 | `004_inference_version` | Adds `inferences.model_version` (default 1) |
 | `005_tasks` | Adds `tasks`; `videos.task_id` |
 | `006_fine_tunes` | Adds `fine_tune_status` enum and `fine_tunes` table |
+| `007_fine_tune_hidden` | Adds `fine_tunes.hidden` (picker visibility) |
 
 Migrations run automatically on backend startup (`alembic upgrade head` in the container
 `CMD`). To run them by hand:

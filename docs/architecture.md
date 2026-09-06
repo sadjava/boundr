@@ -236,7 +236,7 @@ GET  /api/inference
 ```
 
 `GET /api/inference` requires a JWT and returns the static pipeline list plus the
-caller's `COMPLETED` fine-tunes (ids like `marlin_ft_*`).
+caller's `COMPLETED` fine-tunes that are not `hidden` (ids like `marlin_ft_*`).
 
 `POST /api/jobs/purge` marks every `QUEUED`/`PROCESSING` job as failed, restores the
 video to `UPLOADED` or `COMPLETED` (if an annotation already exists), and trims the
@@ -248,17 +248,22 @@ Redis stream so those messages are not consumed. A consumer that is already insi
 ```text
 POST /api/projects/{project_id}/fine-tunes
 GET  /api/projects/{project_id}/fine-tunes
+GET  /api/fine-tunes
 GET  /api/fine-tunes/{fine_tune_id}
+PATCH /api/fine-tunes/{id}          # { "hidden": true|false }
+DELETE /api/fine-tunes/{id}         # row + S3 prefix
+POST /api/fine-tunes/{id}/cancel    # QUEUED|PROCESSING → FAILED (owner only)
 ```
 
 Creates a `fine_tunes` row (`QUEUED`), enqueues `{job_id}` on Redis stream `ml-finetune`,
 and returns immediately. Videos from the selected tasks that have an annotation with
 non-empty `segments` are used (GENERATED or EDITED). Default pipeline id is
-`marlin_ft_{project}_{YYYYMMDD}_{hex}` (≤32 chars). Also:
+`marlin_ft_{project}_{YYYYMMDD}_{hex}` (≤32 chars).
 
-```text
-POST /api/fine-tunes/{id}/cancel    # QUEUED|PROCESSING → FAILED (owner only)
-```
+`GET /api/fine-tunes` lists every fine-tune for the caller (all statuses), with
+`project_name` / `task_names` enrichment for the Models page. `hidden` keeps the row
+but drops it from `GET /api/inference`. `DELETE` removes the row and best-effort
+deletes the S3 prefix.
 
 Cancel is cooperative: the consumer checks status after `PROCESSING` and skips if the
 job was cancelled; a later `complete`/`fail` callback cannot overwrite a cancelled row.
@@ -332,10 +337,14 @@ The `pegasus_analyze` and `pegasus_segment` pipelines upload videos directly to 
 TwelveLabs API. The video file is downloaded from S3 locally first; a presigned URL
 from MinIO (with the default `S3_PUBLIC_ENDPOINT=http://localhost:9000`) cannot be
 resolved by external services. The SDK is imported lazily so a broken or missing
-dependency does not crash the consumer at startup.
+dependency does not crash the consumer at startup. Analyze requests cap
+`max_tokens` at 4096 so a job can finish inside the two-minute product SLA
+(`TIMEOUT=120` on both Pegasus pipelines). Dense SME output still hits that
+cap (`finish_reason=length`); the client then salvages a valid JSON prefix
+instead of failing the job.
 
 Processing is sequential: the consumer reads Redis with `count=1`, so Pegasus jobs
-occupy the worker for minutes while the next video waits in `QUEUED`.
+occupy the worker for up to two minutes while the next video waits in `QUEUED`.
 
 **S3 key collision:** `annotation.json` has no pipeline name in its S3 key, so
 `pegasus_analyze` and `pegasus_segment` both write to the same object. When the

@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -208,6 +208,7 @@ class FineTune(Base):
     status: Mapped[FineTuneStatus] = mapped_column(
         Enum(FineTuneStatus, name="fine_tune_status"), default=FineTuneStatus.QUEUED
     )
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
     s3_prefix: Mapped[str] = mapped_column(String(512))
     task_ids: Mapped[list] = mapped_column(JSONB, default=list)

@@ -56,9 +56,12 @@ export interface FineTune {
   name: string;
   display_name: string;
   status: FineTuneStatus;
+  hidden: boolean;
   error_msg: string | null;
   s3_prefix: string;
   task_ids: string[];
+  project_name: string | null;
+  task_names: string[];
   manifest: Record<string, unknown> | null;
   created_at: string;
   started_at: string | null;

@@ -9,6 +9,8 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 MODEL_NAME = "pegasus1.5"
 TEMPERATURE = 0.2
 POLL_INTERVAL = 3.0
+# 2-minute job SLA. 32k tokens took ~6 minutes on P27_01; 4096 leaves room for upload.
+MAX_TOKENS = 4096
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,71 @@ def _as_dict(obj: object) -> dict:
     if isinstance(obj, dict):
         return obj
     raise TwelveLabsError(f"cannot convert SDK response of type {type(obj).__name__}")
+
+
+def salvage_truncated_json(text: str) -> dict | list:
+    """Parse JSON, or drop an incomplete tail and close open [ { so json.loads works.
+
+    TwelveLabs sets finish_reason=length and may cut the string mid-object. The
+    complete prefix is kept; the truncated last item is discarded.
+    """
+    text = text.strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    else:
+        if isinstance(payload, (dict, list)):
+            return payload
+        raise TwelveLabsError(
+            f"structured payload must be dict or list, got {type(payload).__name__}"
+        )
+
+    if not text or text[0] not in "{[":
+        raise TwelveLabsError(f"task result data is not valid JSON; excerpt: {text[:200]}")
+
+    recovered: dict | list | None = None
+    in_string = False
+    escape = False
+    depth: list[str] = []
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth.append("}")
+        elif ch == "[":
+            depth.append("]")
+        elif ch in "}]":
+            if not depth or depth[-1] != ch:
+                break
+            depth.pop()
+            got = _closed_prefix(text[: i + 1], depth)
+            if got is not None:
+                recovered = got
+
+    if recovered is None:
+        raise TwelveLabsError(
+            f"task result data is not valid JSON; excerpt: {text[:200]}"
+        )
+    return recovered
+
+
+def _closed_prefix(prefix: str, depth: list[str]) -> dict | list | None:
+    candidate = prefix.rstrip().rstrip(",") + "".join(reversed(depth))
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, (dict, list)) else None
 
 
 def structured_payload(task_result: dict) -> dict | list:
@@ -54,10 +121,14 @@ def structured_payload(task_result: dict) -> dict | list:
     try:
         payload = json.loads(data_str)
     except json.JSONDecodeError as e:
-        excerpt = data_str[:200]
-        raise TwelveLabsError(
-            f"task result data is not valid JSON: {e}; excerpt: {excerpt}"
-        )
+        try:
+            payload = salvage_truncated_json(data_str)
+            logger.warning("Salvaged truncated TwelveLabs JSON")
+        except TwelveLabsError:
+            excerpt = data_str[:200]
+            raise TwelveLabsError(
+                f"task result data is not valid JSON: {e}; excerpt: {excerpt}"
+            ) from e
 
     if not isinstance(payload, (dict, list)):
         raise TwelveLabsError(
@@ -158,6 +229,7 @@ def analyze(
             "video": {"type": "asset_id", "asset_id": asset_id},
             "model_name": MODEL_NAME,
             "temperature": TEMPERATURE,
+            "max_tokens": MAX_TOKENS,
             "analysis_mode": analysis_mode,
             "response_format": response_format,
         }
@@ -174,14 +246,14 @@ def analyze(
 
         result = _wait_for_task(client, task_id, _remaining(timeout, start))
 
-        # Check finish_reason in the nested result object
         task_result_obj = result.get("result", {})
         if isinstance(task_result_obj, dict):
             finish_reason = str(task_result_obj.get("finish_reason") or "").lower()
             if finish_reason == "length":
-                raise TwelveLabsError(
-                    f"analyze task {task_id} was truncated (finish_reason=length); "
-                    "segments are incomplete"
+                logger.warning(
+                    "analyze task %s truncated (finish_reason=length); "
+                    "keeping a valid JSON prefix",
+                    task_id,
                 )
 
         return structured_payload(result)

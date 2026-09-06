@@ -12,10 +12,10 @@ def test_pipelines_are_registered():
 
 
 def test_pipeline_versions_and_timeout():
-    assert PegasusAnalyzeInference.version == 1
-    assert PegasusSegmentInference.version == 1
-    assert PegasusAnalyzeInference.TIMEOUT == 600.0
-    assert PegasusSegmentInference.TIMEOUT == 600.0
+    assert PegasusAnalyzeInference.version == 2
+    assert PegasusSegmentInference.version == 2
+    assert PegasusAnalyzeInference.TIMEOUT == 120.0
+    assert PegasusSegmentInference.TIMEOUT == 120.0
 
 
 def test_prompts_carry_the_project_vocabulary():
@@ -58,7 +58,7 @@ def test_analyze_pipeline_calls_with_correct_mode_and_format(monkeypatch):
     # Verify the API was called with correct parameters
     assert call_args["analysis_mode"] == "general"
     assert call_args["response_format"]["type"] == "json_schema"
-    assert call_args["timeout"] == 600.0
+    assert call_args["timeout"] == 120.0
     assert "Detect" in call_args["prompt"]
 
     # Verify output segments satisfy the contract
@@ -98,7 +98,7 @@ def test_segment_pipeline_calls_with_correct_mode_and_format(monkeypatch):
     # Verify the API was called with correct parameters
     assert call_args["analysis_mode"] == "time_based_metadata"
     assert call_args["response_format"]["type"] == "segment_definitions"
-    assert call_args["timeout"] == 600.0
+    assert call_args["timeout"] == 120.0
     # SME mode rejects the prompt parameter; the instructions live in the description
     assert "prompt" not in call_args
     description = call_args["response_format"]["segment_definitions"][0]["description"]

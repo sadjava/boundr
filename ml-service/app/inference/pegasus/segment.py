@@ -66,8 +66,9 @@ def _segment_definitions(ctx: JobContext) -> dict:
 
 class PegasusSegmentInference(Inference):
     name = "pegasus_segment"
-    version = 1
-    TIMEOUT = 600.0
+    version = 2
+    # Product SLA: one video must finish within two minutes.
+    TIMEOUT = 120.0
 
     def infer(self, meta: VideoMeta, ctx: JobContext) -> list[dict]:
         payload = call_analyze(
