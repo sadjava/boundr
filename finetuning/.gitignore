@@ -1,0 +1,11 @@
+.venv/
+.uv-cache/
+__pycache__/
+prepared/
+cache*/
+adapter*/
+smoke*/
+*.log
+*.tar.gz
+*.lock
+!uv.lock
