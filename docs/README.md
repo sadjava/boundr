@@ -27,6 +27,7 @@ maintained in one language only — there are no parallel translations to drift 
 | [Object storage](storage.md) | S3/MinIO key layout, presigned URL flows, CORS, deletion, known caveats |
 | [Design spec](design_spec.md) | Colour system, typography, components, motion, accessibility |
 | [Data examples](data-examples/) | Export formats, the two contracts, format guarantees |
+| [Fine-tuning](../finetuning/README.md) | Marlin LoRA setup, scene generation, ground-truth event targets, training, and inference |
 
 ---
 

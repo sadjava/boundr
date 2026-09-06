@@ -31,6 +31,30 @@ accepts synonymous labels.
 
 ---
 
+## Fine-tuning
+
+[`finetuning/`](finetuning/README.md) contains the Marlin-2B training workflow:
+data preparation, scene generation and frozen vision caching, language-only LoRA
+training, and caption inference. Base Marlin generates scenes during caching with
+its canonical prompt; ground-truth timestamps and `action | object` text supply the events.
+It supports checkpoint resume and continuation, and uses a separate pinned environment:
+
+```bash
+cd finetuning
+UV_CACHE_DIR="$PWD/.uv-cache" uv sync --locked --python 3.11
+```
+
+The default dataset is `../dataset` beside Boundr; set `MARLIN_DATASET_DIR` to an
+absolute path for another location. `run_all.sh [run-directory]`
+runs preparation, caching, and training. Use `finetuning/runs/` for ignored run
+artifacts; see the linked guide for resource limits and individual commands.
+
+Training runs offline. The Compose `finetune-service` processes mock jobs, and
+UI fine-tunes use stock Marlin. PEFT adapters are loaded through the toolkit's
+Transformers inference command, independently of the application's queue.
+
+---
+
 ## Quick start
 
 ```bash
@@ -120,6 +144,7 @@ backend/      FastAPI service — API, auth, persistence, export
 frontend/     React + TypeScript UI — timeline, annotation editor
 ml-service/   Redis consumer + inference pipelines
 finetune-service/  Redis consumer for domain fine-tune jobs (mock)
+finetuning/    Marlin LoRA training, inference, and validation checks
 infra/        MinIO CORS and Marlin llama.cpp image
 docs/         Project, product and engineering documentation
 ```

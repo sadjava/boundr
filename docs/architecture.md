@@ -80,7 +80,11 @@ minio
 
 No separate worker containers beyond the two consumers. `ml-service` and
 `finetune-service` each contain an HTTP health endpoint and a Redis consumer.
-Real Unsloth training is not wired yet — `finetune-service` proves the data path.
+`finetune-service` handles mock training jobs to exercise the data path.
+The [`finetuning/`](../finetuning/README.md) toolkit trains Marlin
+PEFT adapters from local datasets in its own environment. It is outside the
+Compose job flow; those adapters are not automatically uploaded, registered,
+or served by the application.
 
 ---
 
@@ -318,8 +322,8 @@ GET /health
 
 Consumes `ml-finetune`, downloads each dataset video from S3, uploads a stub
 `manifest.json` + `checkpoint.json` under `users/{user_id}/models/{id}/`, and
-callbacks the backend. No Unsloth / GGUF yet. Selecting a completed `marlin_ft_*`
-pipeline still runs stock Marlin via llama.cpp.
+callbacks the backend. Selecting a completed `marlin_ft_*` pipeline runs stock
+Marlin via llama.cpp. Offline PEFT training uses the `finetuning/` toolkit.
 
 ### Marlin pipeline
 

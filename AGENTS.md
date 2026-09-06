@@ -12,7 +12,10 @@ this file is about how to work in the codebase.
 
 ## Commands
 
-Everything runs through Docker Compose. There is no local dev setup outside it.
+The application runs through Docker Compose. The standalone offline training
+toolkit in `finetuning/` has its own pinned `uv` environment; see
+[finetuning/README.md](finetuning/README.md). It does not replace the mock
+`finetune-service` or connect its PEFT adapters to the product's inference queue.
 
 ```bash
 cp .env.example .env
@@ -112,6 +115,12 @@ the container from `/app`, so the `app` package is importable without a
 docker compose exec ml-service python -m pytest tests/ -q
 ```
 
+The standalone fine-tuning target check needs only the Python standard library:
+
+```bash
+python3 finetuning/check_pipeline.py
+```
+
 The two conventions coexist deliberately: existing `__main__` self-tests stay where
 they are, new tests go to `tests/`. Note that the listed
 `docker compose exec ml-service python -m app.inference` does **not** run —
@@ -185,6 +194,15 @@ finetune-service/app/
   backend_client.py  Dataset fetch + status callbacks
   manifest.py        Stub training manifest
   s3.py              Download videos / upload checkpoint artifacts
+
+finetuning/
+  run_all.sh         Prepare data, cache scenes and vision, and train LoRA in one directory
+  data.py            Validate videos and ground-truth action events
+  artifacts.py       JSON artifacts and checkpoint settings
+  cache.py           Generate base Marlin scenes and cache vision features and caption targets
+  model.py, train.py Language-only PEFT LoRA training and checkpoint continuation
+  infer.py           Standalone Transformers caption inference
+  check_pipeline.py  Target construction and optional native-tokenizer supervision check
 
 frontend/src/
   pages/             Login, Projects, ProjectCreate, ProjectDetail, TaskDetail, VideoPage, Models
@@ -292,7 +310,8 @@ limits, so an OOM does not take the SSH session with it.
 
 **Python.** `from __future__ import annotations` at the top of new modules. Modern type
 hints (`str | None`, `list[dict]`). Lines up to ~100 characters. No linter or formatter
-is configured — match the surrounding style rather than reformatting files. Comments are
+is configured — match the surrounding style rather than reformatting files. Separate
+logical steps within functions with blank lines. Comments are
 sparse and explain *why*, not *what*; do not add narration.
 
 **TypeScript.** Strict mode, no `any`. Double quotes, semicolons, two-space indent.
