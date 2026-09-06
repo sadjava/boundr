@@ -214,8 +214,14 @@ DELETE /api/videos/{video_id}
 
 ```text
 POST /api/videos/{video_id}/process
+POST /api/jobs/purge
 GET  /api/jobs/{job_id}
 ```
+
+`POST /api/jobs/purge` marks every `QUEUED`/`PROCESSING` job as failed, restores the
+video to `UPLOADED` or `COMPLETED` (if an annotation already exists), and trims the
+Redis stream so those messages are not consumed. A consumer that is already inside
+`infer()` is not killed; its later callback is ignored so it cannot overwrite a new run.
 
 ### Annotation
 
@@ -258,10 +264,11 @@ Actual processing happens in the Redis consumer inside the same `ml-service` con
 
 The default `marlin` pipeline samples up to 120 seconds at 2 FPS, sends a temporary
 lossless clip to the local llama.cpp server, and converts its timed English captions
-into the annotation contract. The model weights live in `./models/marlin/`, outside
-the containers and Git. Inputs longer than 120 seconds fail before encoding or GPU
-inference. See [marlin-llamacpp.md](marlin-llamacpp.md) for the pinned build and measured
-settings.
+into the annotation contract with a local spaCy parser. `marlin_gpt` shares that
+captioning step and maps captions through GPT-4o-mini on OpenRouter instead. The
+model weights live in `./models/marlin/`, outside the containers and Git. Inputs
+longer than 120 seconds fail before encoding or GPU inference. See
+[marlin-llamacpp.md](marlin-llamacpp.md) for the pinned build and measured settings.
 
 ### Pegasus pipelines and external APIs
 

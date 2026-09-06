@@ -3,11 +3,19 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Job, User
-from app.schemas import JobOut
+from app.schemas import JobOut, PurgeOut
 from app.security import get_current_user
-from app.services import get_video_for_user
+from app.services import cancel_active_jobs, get_video_for_user
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+@router.post("/purge", response_model=PurgeOut)
+def purge_jobs(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> PurgeOut:
+    return PurgeOut(cancelled=cancel_active_jobs(db))
 
 
 @router.get("/{job_id}", response_model=JobOut)

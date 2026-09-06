@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, downloadTaskExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
+import InlineRename from "../components/InlineRename";
 import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
 import StatusBadge from "../components/StatusBadge";
 import { INFERENCE_TYPES, type InferenceType, type Project, type Task, type Video } from "../types";
@@ -24,6 +25,7 @@ export default function TaskDetail() {
   const [pipeline, setPipeline] = useState("marlin");
   const [inference, setInference] = useState<InferenceType[]>(INFERENCE_TYPES);
   const [running, setRunning] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [pending, setPending] = useState<{ kind: "task" } | { kind: "video"; video: Video } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -119,6 +121,30 @@ export default function TaskDetail() {
     }
   }
 
+  async function stopQueue() {
+    setPurging(true);
+    setError(null);
+    try {
+      await api.post("/api/jobs/purge");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to stop queue");
+    } finally {
+      setPurging(false);
+    }
+  }
+
+  async function renameTask(name: string) {
+    if (!id) return;
+    setError(null);
+    try {
+      setTask(await api.patch<Task>(`/api/tasks/${id}`, { name }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+      throw err;
+    }
+  }
+
   async function confirmDelete() {
     if (!pending || !task) return;
     setDeleting(true);
@@ -154,9 +180,15 @@ export default function TaskDetail() {
       </Link>
       <div className="mt-3 mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="m-0 text-2xl font-semibold">
-            <span className="text-[var(--color-muted)]">Task</span>
-            <span className="ml-2">{task.name}</span>
+          <h1 className="m-0 flex min-w-0 items-center text-2xl font-semibold">
+            <span className="shrink-0 text-[var(--color-muted)]">Task</span>
+            <InlineRename
+              value={task.name}
+              inputClassName="ml-2 min-w-[12rem] flex-1 text-2xl font-semibold"
+              onSave={renameTask}
+            >
+              <span className="ml-2 min-w-0 truncate">{task.name}</span>
+            </InlineRename>
           </h1>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
             {videos.length} {videos.length === 1 ? "video" : "videos"}
@@ -199,7 +231,7 @@ export default function TaskDetail() {
         <label className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
           Model
           <select
-            className="field mt-0 w-44"
+            className="field mt-0 min-w-[13.5rem]"
             value={pipeline}
             disabled={running || ready.length === 0}
             onChange={(e) => setPipeline(e.target.value)}
@@ -214,10 +246,13 @@ export default function TaskDetail() {
         </label>
         <button
           className="btn btn-primary"
-          disabled={running || ready.length === 0}
+          disabled={running || purging || ready.length === 0}
           onClick={runAll}
         >
           {busy ? "Running…" : running ? "Starting…" : "Run all videos"}
+        </button>
+        <button className="btn btn-danger" disabled={purging} onClick={stopQueue}>
+          {purging ? "Stopping…" : "Stop queue"}
         </button>
       </div>
 
@@ -244,6 +279,11 @@ export default function TaskDetail() {
               </div>
             </Link>
             <StatusBadge status={v.status} />
+            {(v.status === "QUEUED" || v.status === "PROCESSING") && v.latest_job?.pipeline && (
+              <span className="text-xs text-[var(--color-muted)]">
+                {inference.find((m) => m.id === v.latest_job?.pipeline)?.name ?? v.latest_job.pipeline}
+              </span>
+            )}
             <button className="btn btn-danger" onClick={() => setPending({ kind: "video", video: v })}>
               Delete
             </button>

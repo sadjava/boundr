@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, downloadProjectExport, downloadTaskExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
+import InlineRename from "../components/InlineRename";
 import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
 import type { Project, Task } from "../types";
 
@@ -89,6 +90,28 @@ export default function ProjectDetail() {
     }
   }
 
+  async function renameProject(name: string) {
+    if (!project) return;
+    setError(null);
+    try {
+      setProject(await api.patch<Project>(`/api/projects/${project.id}`, { name }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+      throw err;
+    }
+  }
+
+  async function renameTask(task: Task, name: string) {
+    setError(null);
+    try {
+      const updated = await api.patch<Task>(`/api/tasks/${task.id}`, { name });
+      setTasks((rows) => rows.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+      throw err;
+    }
+  }
+
   if (!project) {
     return <p className="page text-[var(--color-muted)]">{error || "Loading…"}</p>;
   }
@@ -102,9 +125,15 @@ export default function ProjectDetail() {
       </Link>
       <div className="mt-3 mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="m-0 text-2xl font-semibold">
-            <span className="text-[var(--color-muted)]">Project</span>
-            <span className="ml-2">{project.name}</span>
+          <h1 className="m-0 flex min-w-0 items-center text-2xl font-semibold">
+            <span className="shrink-0 text-[var(--color-muted)]">Project</span>
+            <InlineRename
+              value={project.name}
+              inputClassName="ml-2 min-w-[12rem] flex-1 text-2xl font-semibold"
+              onSave={renameProject}
+            >
+              <span className="ml-2 min-w-0 truncate">{project.name}</span>
+            </InlineRename>
           </h1>
           {project.description && <p className="mt-1 text-[var(--color-muted)]">{project.description}</p>}
           {(project.action_types?.length || project.objects?.length) ? (
@@ -169,12 +198,19 @@ export default function ProjectDetail() {
             key={t.id}
             className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3"
           >
-            <Link to={`/tasks/${t.id}`} className="min-w-0 flex-1 text-[var(--color-text)] no-underline">
-              <div className="font-medium">{t.name}</div>
+            <div className="min-w-0 flex-1">
+              <InlineRename
+                value={t.name}
+                onSave={(name) => renameTask(t, name)}
+              >
+                <Link to={`/tasks/${t.id}`} className="min-w-0 truncate font-medium text-[var(--color-text)] no-underline">
+                  {t.name}
+                </Link>
+              </InlineRename>
               <div className="text-xs text-[var(--color-muted)]">
                 {t.video_count} {t.video_count === 1 ? "video" : "videos"}
               </div>
-            </Link>
+            </div>
             <button
               className="btn btn-ghost"
               disabled={t.video_count === 0}

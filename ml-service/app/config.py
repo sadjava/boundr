@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     marlin_url: str = "http://localhost:8085/v1/chat/completions"
     database_url: str = "postgresql://boundr:boundr@localhost:5432/boundr"
     twelvelabs_api_key: str = ""
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
 
 @lru_cache

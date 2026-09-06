@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, downloadProjectExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
+import InlineRename from "../components/InlineRename";
 import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
 import type { Project } from "../types";
 
@@ -56,6 +57,17 @@ export default function Projects() {
     }
   }
 
+  async function renameProject(project: Project, name: string) {
+    setError(null);
+    try {
+      const updated = await api.patch<Project>(`/api/projects/${project.id}`, { name });
+      setProjects((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+      throw err;
+    }
+  }
+
   return (
     <div className="page">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -83,18 +95,22 @@ export default function Projects() {
             key={p.id}
             className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-4"
           >
-            <Link
-              to={`/projects/${p.id}`}
-              className="min-w-0 flex-1 text-[var(--color-text)] no-underline"
-            >
-              <div className="font-medium">{p.name}</div>
+            <div className="min-w-0 flex-1">
+              <InlineRename value={p.name} onSave={(name) => renameProject(p, name)}>
+                <Link
+                  to={`/projects/${p.id}`}
+                  className="min-w-0 truncate font-medium text-[var(--color-text)] no-underline"
+                >
+                  {p.name}
+                </Link>
+              </InlineRename>
               {p.description && (
                 <div className="mt-1 text-sm text-[var(--color-muted)]">{p.description}</div>
               )}
               <div className="mt-1 text-xs text-[var(--color-muted)]">
                 Created {fmt(p.created_at)} · Updated {fmt(p.updated_at)}
               </div>
-            </Link>
+            </div>
             <button
               className="btn btn-ghost"
               onClick={() => {

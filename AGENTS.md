@@ -77,6 +77,7 @@ docker compose exec backend python -m app.labels        # vocabulary normalisati
 docker compose exec ml-service python -m app.inference  # every registered pipeline
 docker compose exec ml-service python -m app.inference.marlin.infer
 docker compose exec ml-service python -m app.inference.marlin.postprocess
+docker compose exec ml-service python -m app.inference.marlin.gpt_postprocess
 ```
 
 Each prints `ok` on success. Follow this pattern for new pure-logic modules: no network,
@@ -178,9 +179,9 @@ genuinely different — add a package, so old results stay reproducible.
 `overlap`, `dense` and `sequential` are stubs that return synthetic segments with a
 correct structure. They exist to exercise the loop and are staying — they let you test
 the queue without spending an API call. The real pipelines are the two MVP branches:
-`pegasus_analyze` / `pegasus_segment` and `marlin` (implemented). Expect more: the
-registry is the scaling point, so adding a model means adding a package, never editing
-an existing one.
+`pegasus_analyze` / `pegasus_segment` and `marlin` / `marlin_gpt` (implemented).
+Expect more: the registry is the scaling point, so adding a model means adding a
+package, never editing an existing one.
 
 ### Steps
 
@@ -216,13 +217,14 @@ an existing one.
 5. Extend the self-test at the bottom of that same `__init__.py` with assertions about
    the new pipeline's output.
 
-**Exception: `inference/pegasus/`.** The two TwelveLabs pipelines
-(`pegasus_analyze`, `pegasus_segment`) share one package instead of having one each.
-They differ in the `response_format` they send, the `analysis_mode` they request, how
-they parse the reply, and the prompt text; the SDK client, the prompt builder and
-the mapping to the annotation contract are shared. Splitting them would duplicate
-that code or push it to a third place. This is deliberate — do not "fix" it by
-splitting the package.
+**Exception: `inference/pegasus/` and `inference/marlin/`.** The two TwelveLabs
+pipelines (`pegasus_analyze`, `pegasus_segment`) share one package instead of having
+one each. They differ in the `response_format` they send, the `analysis_mode` they
+request, how they parse the reply, and the prompt text; the SDK client, the prompt
+builder and the mapping to the annotation contract are shared. Splitting them would
+duplicate that code or push it to a third place. This is deliberate — do not "fix"
+it by splitting the package. Same for `marlin` and `marlin_gpt`: they share sampling
+and llama.cpp captioning, and differ only in how captions become segments.
 
 ### The contract you must satisfy
 
@@ -367,9 +369,13 @@ Things that have already cost time here.
   container was still running the previous prompt.
 - **Pegasus jobs block the consumer for minutes.** The consumer reads with `count=1`,
   so videos are processed one at a time; the next job sits in `QUEUED` meanwhile.
-  `TIMEOUT` is a class attribute on each pipeline, not a setting.
+  `TIMEOUT` is a class attribute on each pipeline, not a setting. **Stop queue**
+  (`POST /api/jobs/purge`) fails stuck jobs and trims Redis; it does not kill an
+  in-flight `infer()`. Restart `ml-service` if a Pegasus/Marlin call is still running.
 - **`TWELVELABS_API_KEY` is required for the Pegasus pipelines.** Without it a job
   fails with an explicit message rather than a 401 from the API.
+- **`OPENROUTER_API_KEY` is required for `marlin_gpt`.** The spaCy `marlin` pipeline
+  does not use it. Without the key a `marlin_gpt` job fails with an explicit message.
 
 ---
 

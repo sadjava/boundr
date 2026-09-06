@@ -8,13 +8,14 @@ from app.inference.base import (
     mock_segments,
 )
 from app.inference.dense import DenseInference
-from app.inference.marlin import MarlinInference
+from app.inference.marlin import MarlinGptInference, MarlinInference
 from app.inference.overlap import OverlapInference
 from app.inference.pegasus import PegasusAnalyzeInference, PegasusSegmentInference
 from app.inference.sequential import SequentialInference
 
 PIPELINES: dict[str, type[Inference]] = {
     "marlin": MarlinInference,
+    "marlin_gpt": MarlinGptInference,
     "overlap": OverlapInference,
     "stub": OverlapInference,
     "": OverlapInference,
@@ -88,4 +89,5 @@ if __name__ == "__main__":
     assert SequentialInference.version == 2
     assert DenseInference.version == 2
     assert MarlinInference.version == 7
+    assert MarlinGptInference.version == 2
     print("ok")

@@ -26,7 +26,7 @@ RUN patch -p1 < /tmp/qwen-video-format.patch \
         -DLLAMA_BUILD_TESTS=OFF \
         -DLLAMA_BUILD_UI=OFF \
         -DLLAMA_USE_PREBUILT_UI=OFF \
-    && cmake --build build --parallel --target llama-server
+    && cmake --build build --parallel 2 --target llama-server
 
 FROM ghcr.io/ggml-org/llama.cpp@sha256:8557e3d273aa6010d46f355e826348b691ba3ddffccae8eaf0150596bbc3ec42
 COPY --from=build /src/build/bin/ /app/

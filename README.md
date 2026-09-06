@@ -163,7 +163,7 @@ English. Each document is maintained in one language only.
 ```text
 POST   /api/auth/register            POST   /api/videos/{id}/process
 POST   /api/auth/login               GET    /api/jobs/{id}
-GET    /api/auth/me
+GET    /api/auth/me                  POST   /api/jobs/purge
                                      GET    /api/videos/{id}/annotation
 GET    /api/projects                 PUT    /api/videos/{id}/annotation
 POST   /api/projects                 GET    /api/videos/{id}/export?format=json|csv
@@ -190,6 +190,10 @@ The `pegasus_analyze` and `pegasus_segment` pipelines require a TwelveLabs API k
 Register at https://playground.twelvelabs.io, copy the key from Dashboard → API Key,
 and set it in `.env` as `TWELVELABS_API_KEY`. Without the key, Pegasus jobs will fail
 with an explicit message, but other pipelines work normally.
+
+`marlin_gpt` uses the same local Marlin captioning, then maps captions to actions with
+GPT-4o-mini through OpenRouter. Set `OPENROUTER_API_KEY` in `.env`. Without the key,
+that pipeline fails with an explicit message; `marlin` itself does not need it.
 
 Marlin is the default pipeline. It accepts videos up to 120 seconds and runs through
 the local llama.cpp service; detailed setup and measured behavior are in

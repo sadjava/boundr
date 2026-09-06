@@ -136,6 +136,7 @@ class AnnotationPut(BaseModel):
 class JobOut(BaseModel):
     id: uuid.UUID
     video_id: uuid.UUID
+    pipeline: str = "marlin"
     status: str
     created_at: datetime
     started_at: datetime | None
@@ -172,11 +173,20 @@ class ProcessTaskOut(BaseModel):
     queued: int
 
 
+class PurgeOut(BaseModel):
+    cancelled: int
+
+
 INFERENCE_TYPES = [
     {
         "id": "marlin",
         "name": "Marlin 2B",
         "description": "GPU video captioning through llama.cpp",
+    },
+    {
+        "id": "marlin_gpt",
+        "name": "Marlin 2B + GPT",
+        "description": "Marlin captions mapped to actions by GPT-4o-mini",
     },
     {
         "id": "overlap",

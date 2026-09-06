@@ -25,3 +25,23 @@ def enqueue_job(
             "project_id": project_id,
         },
     )
+
+
+def flush_queue() -> int:
+    """Drop pending and never-delivered jobs. The consumer group stays intact."""
+    r = get_redis()
+    stream = settings.redis_stream
+    try:
+        pending = r.xpending_range(stream, settings.redis_group, min="-", max="+", count=10000)
+        ids = [
+            item["message_id"] if isinstance(item, dict) else item[0]
+            for item in pending
+        ]
+        if ids:
+            r.xack(stream, settings.redis_group, *ids)
+    except redis.ResponseError:
+        pass
+    try:
+        return int(r.xtrim(stream, maxlen=0, approximate=False))
+    except redis.ResponseError:
+        return 0

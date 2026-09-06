@@ -27,7 +27,7 @@ def set_status(job_id: str, body: InternalStatusIn, db: Session = Depends(get_db
     job = _job_or_404(db, job_id)
     if body.status != JobStatus.PROCESSING.value:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported status")
-    if job.status == JobStatus.COMPLETED:
+    if job.status not in {JobStatus.QUEUED, JobStatus.PROCESSING}:
         return job
     job.status = JobStatus.PROCESSING
     job.started_at = job.started_at or utcnow()
@@ -43,6 +43,8 @@ def set_status(job_id: str, body: InternalStatusIn, db: Session = Depends(get_db
 @router.post("/{job_id}/complete", response_model=JobOut)
 def complete(job_id: str, body: InternalCompleteIn, db: Session = Depends(get_db)) -> Job:
     job = _job_or_404(db, job_id)
+    if job.status not in {JobStatus.QUEUED, JobStatus.PROCESSING}:
+        return job
     video = db.get(Video, job.video_id)
     if video is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
@@ -69,6 +71,8 @@ def complete(job_id: str, body: InternalCompleteIn, db: Session = Depends(get_db
 @router.post("/{job_id}/fail", response_model=JobOut)
 def fail(job_id: str, body: InternalFailIn, db: Session = Depends(get_db)) -> Job:
     job = _job_or_404(db, job_id)
+    if job.status not in {JobStatus.QUEUED, JobStatus.PROCESSING}:
+        return job
     job.status = JobStatus.FAILED
     job.error_msg = body.error_msg
     video = db.get(Video, job.video_id)

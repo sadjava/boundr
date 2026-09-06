@@ -11,6 +11,7 @@ from fractions import Fraction
 
 from app.config import get_settings
 from app.inference.base import Inference, JobContext, VideoMeta
+from app.inference.marlin.gpt_postprocess import parse_with_gpt
 from app.inference.marlin.postprocess import Postprocessor, parse_manipulations
 
 PROMPT = (
@@ -121,6 +122,14 @@ class MarlinInference(Inference):
         raw, model_duration = _caption(ctx.video_path)
         segments = self.postprocessor(raw, model_duration, ctx)
         return _source_timeline(segments, meta.duration, model_duration)
+
+
+class MarlinGptInference(MarlinInference):
+    name = "marlin_gpt"
+    version = 2
+
+    def __init__(self, postprocessor: Postprocessor = parse_with_gpt):
+        super().__init__(postprocessor)
 
 
 if __name__ == "__main__":

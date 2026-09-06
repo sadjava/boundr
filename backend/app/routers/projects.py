@@ -61,7 +61,7 @@ def update_project(
 ) -> ProjectOut:
     project = get_project_for_user(db, project_id, user)
     if body.name is not None:
-        project.name = body.name
+        project.name = body.name.strip()
     if body.description is not None:
         project.description = body.description
     if body.action_types is not None:

@@ -31,7 +31,7 @@ video
   -> validate duration
   -> sample at 2 FPS to a temporary lossless clip
   -> Marlin caption through llama.cpp
-  -> parse timed human-object manipulations
+  -> parse timed human-object manipulations (spaCy, or GPT-4o-mini)
   -> Boundr timeline segments
 ```
 
@@ -55,10 +55,16 @@ replaceable callable with this shape:
 (text, model_duration, job_context) -> segments
 ```
 
-The default implementation is deterministic and local. A tolerant regular expression
-reads Marlin's timestamp envelopes; the pinned spaCy English dependency model finds
-human predicates, verb particles, and manipulated noun phrases. It handles common
-active/passive, coordination, pronoun, and complement forms without another LLM call.
+The default `marlin` implementation is deterministic and local. A tolerant regular
+expression reads Marlin's timestamp envelopes; the pinned spaCy English dependency
+model finds human predicates, verb particles, and manipulated noun phrases. It handles
+common active/passive, coordination, pronoun, and complement forms without another
+LLM call.
+
+`marlin_gpt` is a second pipeline in the same package. It uses the same captioning
+step, then asks GPT-4o-mini through OpenRouter to emit Boundr `{start, end, action,
+object}` segments. It needs `OPENROUTER_API_KEY`. Catalog labels, when set, are
+matched by normalized spelling; unmatched items are dropped.
 
 With empty project catalogs, extracted verb lemmas and object phrases remain
 open-vocabulary. With configured catalogs, only matching action/object labels are
@@ -122,5 +128,6 @@ docker compose up -d --build
 docker compose exec ml-service python -m pytest tests -q
 docker compose exec ml-service python -m app.inference.marlin.infer
 docker compose exec ml-service python -m app.inference.marlin.postprocess
+docker compose exec ml-service python -m app.inference.marlin.gpt_postprocess
 curl -f http://127.0.0.1:8085/health
 ```

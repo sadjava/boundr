@@ -81,10 +81,12 @@ flowchart LR
 
 ```
 
-**`marlin` (implemented and default).** The open video-VLM
+**`marlin` / `marlin_gpt` (implemented; `marlin` is default).** The open video-VLM
 [`NemoStation/Marlin-2B`](https://huggingface.co/NemoStation/Marlin-2B) (Apache 2.0) runs
-locally: no external API, no per-clip cost, no geo-blocking. It emits events with
-second-precise timestamps in one pass. Sampling is 2 FPS up to a 120-second input limit.
+locally: no per-clip GPU cost, no geo-blocking. It emits events with second-precise
+timestamps in one pass. Sampling is 2 FPS up to a 120-second input limit. `marlin`
+parses captions with spaCy; `marlin_gpt` maps the same captions through GPT-4o-mini
+on OpenRouter.
 
 **`pegasus_analyze` / `pegasus_segment` (implemented).** A hosted TwelveLabs model, one
 package with two modes: `general` with a `json_schema` response and a real `prompt`, and
@@ -106,7 +108,7 @@ flowchart LR
     JOB["job<br/>pipeline: name"] --> REG{{"PIPELINES<br/>registry"}}
     REG --> O["overlap · dense<br/>sequential<br/>(stubs)"]
     REG --> PG["pegasus_analyze<br/>pegasus_segment"]
-    REG --> MR["marlin"]
+    REG --> MR["marlin · marlin_gpt"]
     REG --> NEXT["...<br/>next model"]
 
     O --> BASE["Inference.run()<br/>ffprobe, contract shape"]
@@ -141,7 +143,7 @@ flowchart LR
     end
     subgraph INF["Inference"]
         D1["pegasus_analyze<br/>pegasus_segment<br/>real model"]
-        D2["marlin<br/>real local model"]
+        D2["marlin · marlin_gpt<br/>real local model"]
         D3["overlap · dense · sequential<br/>synthetic segments"]
     end
     C --> INF --> E
@@ -149,7 +151,8 @@ flowchart LR
 ```
 
 The Pegasus pipelines upload video to TwelveLabs and map the reply onto the contract.
-Marlin runs locally through llama.cpp and deterministically parses its timed captions.
+Marlin runs locally through llama.cpp. `marlin` parses captions with spaCy;
+`marlin_gpt` sends the same captions to GPT-4o-mini via OpenRouter.
 The three original pipelines remain as stubs — they return synthetic segments
 with a correct structure and the right duration, reading real metadata through `ffprobe`,
 so the whole file-handling path stays exercised without spending an API call. They are

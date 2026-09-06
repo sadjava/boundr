@@ -54,6 +54,7 @@ def _process_message(fields: dict[str, str]) -> None:
         os.close(fd)
         download_object(s3_key, tmp_path)
         pipeline = get_pipeline(fields.get("pipeline") or settings.pipeline)
+        logger.info("Job %s starting pipeline %s", job_id, pipeline.name)
         annotation = pipeline.run(tmp_path, ctx)
         ann_key = annotation_key_from_video_key(s3_key)
         upload_json(ann_key, json.dumps(annotation, indent=2).encode("utf-8"))
@@ -94,6 +95,10 @@ def consume_loop() -> None:
             )
         except Exception:
             logger.exception("XREADGROUP failed")
+            try:
+                _ensure_group(r)
+            except Exception:
+                logger.exception("Recreating consumer group failed")
             time.sleep(2)
             continue
         if not resp:

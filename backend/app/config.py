@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://boundr:boundr@localhost:5432/boundr"
     redis_url: str = "redis://localhost:6379/0"
     redis_stream: str = "ml-jobs"
+    redis_group: str = "ml-workers"
 
     jwt_secret: str = "change-me-in-prod"
     jwt_expire_minutes: int = 60 * 24 * 7

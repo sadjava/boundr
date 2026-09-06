@@ -61,7 +61,7 @@ clustering branch is not part of the MVP.
 queue with states and callbacks, per-pipeline result storage, timeline editor, validated
 JSON and CSV export.
 
-**Implemented:** `marlin`, `pegasus_analyze`, and `pegasus_segment` run real inference.
+**Implemented:** `marlin`, `marlin_gpt`, `pegasus_analyze`, and `pegasus_segment` run real inference.
 The original `overlap` / `dense` / `sequential` pipelines stay as stubs for exercising
 the loop. Still open: a representative benchmark aligned with Boundr's target taxonomy
 and granularity.

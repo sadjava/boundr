@@ -21,7 +21,7 @@ from app.models import (
     utcnow,
 )
 from app.s3 import video_s3_key
-from app.queue import enqueue_job
+from app.queue import enqueue_job, flush_queue
 
 
 def pipeline_version(pipeline: str) -> int | None:
@@ -232,13 +232,16 @@ def create_and_enqueue_job(
 ) -> Job:
     job = latest_job(db, video.id)
     if job is not None and job.status in {JobStatus.QUEUED, JobStatus.PROCESSING}:
-        if job.status == JobStatus.QUEUED and requeue_if_queued:
-            enqueue_job(str(job.id), str(video.id), video.s3_key, job.pipeline, str(video.project_id))
-        return job
+        if job.pipeline == pipeline:
+            if job.status == JobStatus.QUEUED and requeue_if_queued:
+                enqueue_job(str(job.id), str(video.id), video.s3_key, job.pipeline, str(video.project_id))
+            return job
+        job.status = JobStatus.FAILED
+        job.error_msg = f"Superseded by {pipeline}"
 
     # Marlin's parsed labels depend on mutable project catalogs,
     # which are not part of the cache key.
-    ver = pipeline_version(pipeline) if pipeline != "marlin" else None
+    ver = pipeline_version(pipeline) if pipeline not in {"marlin", "marlin_gpt"} else None
     cached = get_inference(db, video.id, pipeline, ver) if ver is not None else None
     if cached is not None:
         return apply_cached_inference(db, video, cached)
@@ -254,3 +257,20 @@ def create_and_enqueue_job(
     db.refresh(video)
     enqueue_job(str(job.id), str(video.id), video.s3_key, pipeline, str(video.project_id))
     return job
+
+
+def cancel_active_jobs(db: Session) -> int:
+    jobs = db.scalars(
+        select(Job).where(Job.status.in_({JobStatus.QUEUED, JobStatus.PROCESSING}))
+    ).all()
+    for job in jobs:
+        job.status = JobStatus.FAILED
+        job.error_msg = "Cancelled: queue cleared"
+        video = db.get(Video, job.video_id)
+        if video is not None and video.status in {VideoStatus.QUEUED, VideoStatus.PROCESSING}:
+            video.status = (
+                VideoStatus.COMPLETED if video.annotation is not None else VideoStatus.UPLOADED
+            )
+    flush_queue()
+    db.commit()
+    return len(jobs)

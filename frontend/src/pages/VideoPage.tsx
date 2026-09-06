@@ -64,6 +64,7 @@ export default function VideoPage() {
   const [saving, setSaving] = useState(false);
   const [uploadingAnn, setUploadingAnn] = useState(false);
   const [running, setRunning] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [pipeline, setPipeline] = useState("marlin");
   const [inference, setInference] = useState<InferenceType[]>(INFERENCE_TYPES);
   const draggingRef = useRef(false);
@@ -91,6 +92,7 @@ export default function VideoPage() {
         ? { ...v, playback_url: prev.playback_url }
         : v,
     );
+    if (v.latest_job?.pipeline) setPipeline(v.latest_job.pipeline);
     try {
       const project = await api.get<Project>(`/api/projects/${v.project_id}`);
       setActionTypes(project.action_types || []);
@@ -305,6 +307,19 @@ export default function VideoPage() {
     }
   }
 
+  async function stopQueue() {
+    setPurging(true);
+    setError(null);
+    try {
+      await api.post("/api/jobs/purge");
+      await loadVideo();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to stop queue");
+    } finally {
+      setPurging(false);
+    }
+  }
+
   function startResize(e: ReactPointerEvent<HTMLButtonElement>) {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -366,6 +381,8 @@ export default function VideoPage() {
 
   const busy = video.status === "QUEUED" || video.status === "PROCESSING";
   const canRun = video.status !== "UPLOADING" && !busy;
+  const runningName = inference.find((m) => m.id === (video.latest_job?.pipeline || pipeline))?.name
+    ?? pipeline;
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden">
@@ -379,6 +396,9 @@ export default function VideoPage() {
           </Link>
           <h1 className="m-0 truncate text-base font-semibold">{video.name}</h1>
           <StatusBadge status={video.status} />
+          {busy && (
+            <span className="text-sm text-[var(--color-muted)]">{runningName}</span>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn btn-ghost" disabled={!video.prev_video_id} onClick={() => video.prev_video_id && navigate(`/videos/${video.prev_video_id}`)}>
@@ -390,7 +410,7 @@ export default function VideoPage() {
           <label className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
             Model
             <select
-              className="field mt-0 w-44"
+              className="field mt-0 min-w-[13.5rem]"
               value={pipeline}
               disabled={!canRun || running}
               onChange={(e) => setPipeline(e.target.value)}
@@ -403,8 +423,11 @@ export default function VideoPage() {
               ))}
             </select>
           </label>
-          <button className="btn btn-primary" disabled={!canRun || running} onClick={runModel}>
-            {busy ? "Running model…" : running ? "Starting…" : "Run model"}
+          <button className="btn btn-primary" disabled={!canRun || running || purging} onClick={runModel}>
+            {busy ? `Running ${runningName}…` : running ? "Starting…" : "Run model"}
+          </button>
+          <button className="btn btn-danger" disabled={purging} onClick={stopQueue}>
+            {purging ? "Stopping…" : "Stop queue"}
           </button>
           <button className="btn btn-ghost" disabled={saving || !data} onClick={save}>
             {saving ? "Saving…" : "Save"}

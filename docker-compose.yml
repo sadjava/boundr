@@ -198,6 +198,7 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-secret}
       PIPELINE: marlin
       TWELVELABS_API_KEY: ${TWELVELABS_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       MARLIN_URL: http://marlin-server:8085/v1/chat/completions
       DATABASE_URL: postgresql://${POSTGRES_USER:-boundr}:${POSTGRES_PASSWORD:-boundr}@postgres:5432/${POSTGRES_DB:-boundr}
     ports:

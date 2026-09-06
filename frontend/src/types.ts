@@ -29,6 +29,7 @@ export interface Project {
 export interface Job {
   id: string;
   video_id: string;
+  pipeline: string;
   status: JobStatus;
   created_at: string;
   started_at: string | null;
@@ -97,6 +98,7 @@ export interface InferenceType {
 
 export const INFERENCE_TYPES: InferenceType[] = [
   { id: "marlin", name: "Marlin 2B", description: "GPU video captioning through llama.cpp" },
+  { id: "marlin_gpt", name: "Marlin 2B + GPT", description: "Marlin captions mapped to actions by GPT-4o-mini" },
   { id: "overlap", name: "Overlap", description: "Concurrent actions that overlap in time" },
   { id: "sequential", name: "Sequential", description: "Non-overlapping actions, one after another" },
   { id: "dense", name: "Dense", description: "Shorter windows with more overlap" },
