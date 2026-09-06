@@ -46,6 +46,26 @@ IoU 0.5 are dropped. Surviving pairs are true positives, leftover predictions ar
 false positives, leftover reference segments are false negatives. F1 does not
 look at labels.
 
+### Matching mode
+
+`--matching onetoone` (default) is the strict 1:1 assignment described above and
+is what the case thresholds are defined on.
+
+`--matching many` allows many-to-one and one-to-many pairs: each reference
+segment takes its best prediction and each prediction takes its best reference,
+so one coarse predicted step may cover several reference steps and vice versa.
+Pairs are scored by containment — `max(inter/|pred|, inter/|gt|)` — instead of
+IoU, and the `iou` column of `matching.csv` holds that containment value.
+Precision and recall are counted over distinct segments, so a segment reused in
+several pairs is not counted twice; on 1:1 data both modes give identical
+numbers.
+
+Use it when the reference is annotated at a finer granularity than the product
+produces (EPIC-KITCHENS is): strict 1:1 turns every uncovered reference step into
+a false negative even when the prediction is not wrong. It measures coverage, not
+boundary precision — read it together with `within_2s_rate`, which gets stricter
+in this mode because loosely aligned pairs now count as true positives.
+
 Boundary error and label accuracy are computed over matched pairs only.
 `within_2s_rate` is the share of TP pairs where both start and end are within
 2 seconds of the reference. `action_acc` and `object_acc` are scored separately.

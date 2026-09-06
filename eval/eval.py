@@ -30,6 +30,9 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=Path("reports"))
     parser.add_argument("--judge-model", default="openai/gpt-4o-mini")
     parser.add_argument("--no-judge", action="store_true")
+    parser.add_argument("--matching", choices=("onetoone", "many"), default="onetoone",
+                        help="onetoone: строго 1:1 по IoU; many: many-to-one и "
+                             "one-to-many по покрытию")
     parser.add_argument("--cache", type=Path, default=_ROOT / ".eval_cache.json")
     return parser.parse_args(argv)
 
@@ -84,7 +87,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"warning: unreadable prediction, treated as empty — {exc}")
                 pred_segments = []
 
-        per_clip[clip] = evaluate_clip(clip, pred_segments, valid_gt, judge)
+        per_clip[clip] = evaluate_clip(
+            clip, pred_segments, valid_gt, judge, matching=args.matching)
 
     judge.save_cache()
 
@@ -94,12 +98,15 @@ def main(argv: list[str] | None = None) -> int:
     total = write_results_csv(per_clip, args.out_dir / "results.csv")
 
     gates = _thresholds(judge)
-    _print_report(per_clip, total, judge, missing, args.out_dir, gates)
+    _print_report(per_clip, total, judge, missing, args.out_dir, gates,
+                  args.matching)
     return 0 if all(total[name] >= limit for name, limit in gates) else 1
 
 
 def _print_report(per_clip, total, judge: Judge, missing: list[str],
-                  out_dir: Path, gates: list[tuple[str, float]]) -> None:
+                  out_dir: Path, gates: list[tuple[str, float]],
+                  matching: str = "onetoone") -> None:
+    print(f"matching: {matching}")
     if judge.disabled:
         print(f"judge: disabled ({judge.mismatch_count} "
               f"{'pair' if judge.mismatch_count == 1 else 'pairs'} "

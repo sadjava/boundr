@@ -125,3 +125,20 @@ def test_results_csv_has_a_total_row(tmp_path: Path) -> None:
     assert total["tp"] == 1
     assert total["fn"] == 1
     assert total["f1@0.5"] == 2 / 3
+
+
+def test_many_mode_does_not_double_count_a_reused_prediction() -> None:
+    pred = [seg(0, 9)]
+    gt = [seg(0, 3), seg(3, 6), seg(6, 9)]
+    metrics = metrics_for(evaluate_clip("clip", pred, gt, StubJudge(), matching="many"))
+    assert (metrics["n_pred"], metrics["n_gt"]) == (1, 3)
+    assert (metrics["fp"], metrics["fn"]) == (0, 0)
+    assert metrics["f1@0.5"] == 1.0
+
+
+def test_many_mode_still_penalises_a_missed_step() -> None:
+    pred = [seg(0, 3)]
+    gt = [seg(0, 3), seg(30, 33)]
+    metrics = metrics_for(evaluate_clip("clip", pred, gt, StubJudge(), matching="many"))
+    assert metrics["fn"] == 1
+    assert metrics["f1@0.5"] < 1.0

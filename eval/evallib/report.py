@@ -7,7 +7,7 @@ from statistics import mean
 
 from evallib.judge import JudgeQuery
 from evallib.loader import Segment
-from evallib.matching import match_segments
+from evallib.matching import match_segments, match_segments_many
 
 IOU_POINTS = (0.5, 0.25, 0.1)
 BOUNDARY_TOLERANCE = 2.0
@@ -52,8 +52,10 @@ def evaluate_clip(
     pred: list[Segment],
     gt: list[Segment],
     judge,
+    matching: str = "onetoone",
 ) -> list[PairRow]:
-    result = match_segments(pred, gt, threshold=min(IOU_POINTS))
+    matcher = match_segments_many if matching == "many" else match_segments
+    result = matcher(pred, gt, threshold=min(IOU_POINTS))
 
     rows: list[PairRow] = []
     queries: list[JudgeQuery] = []
@@ -155,6 +157,21 @@ def _f1(tp: int, fp: int, fn: int) -> float:
     return 0.0 if denominator == 0 else 2 * tp / denominator
 
 
+def _f1_pr(hit_pred: int, hit_gt: int, n_pred: int, n_gt: int) -> float:
+    """F1 из точности по предсказаниям и полноты по эталону.
+
+    В режиме 1:1 совпадает с обычной формулой; в режиме many пара сегментов
+    засчитывается обеим сторонам, поэтому precision и recall считаются
+    раздельно.
+    """
+    if not n_pred or not n_gt:
+        return 0.0
+    precision, recall = hit_pred / n_pred, hit_gt / n_gt
+    if precision + recall == 0:
+        return 0.0
+    return 2 * precision * recall / (precision + recall)
+
+
 def _p95(values: list[float]) -> float:
     if not values:
         return 0.0
@@ -163,20 +180,38 @@ def _p95(values: list[float]) -> float:
     return ordered[index]
 
 
+def _keys(rows: list[PairRow], side: str) -> set[tuple]:
+    # id может быть пустым (синтетические данные), поэтому в ключ идут и границы.
+    return {
+        (r.clip, getattr(r, f"{side}_id"),
+         getattr(r, f"{side}_start"), getattr(r, f"{side}_end"))
+        for r in rows
+    }
+
+
 def metrics_for(rows: list[PairRow]) -> dict[str, float | int]:
     matched = [r for r in rows if r.status == "TP"]
-    n_gt = sum(1 for r in rows if r.status in {"TP", "FN"})
-    n_pred = sum(1 for r in rows if r.status in {"TP", "FP"})
-    tp, fp, fn = len(matched), n_pred - len(matched), n_gt - len(matched)
+    # Считаем по уникальным сегментам, а не по строкам: в режиме many один
+    # сегмент участвует в нескольких парах и иначе бы удваивал счётчики.
+    gt_rows = [r for r in rows if r.status in {"TP", "FN"}]
+    pred_rows = [r for r in rows if r.status in {"TP", "FP"}]
+    n_gt = len(_keys(gt_rows, "gt"))
+    n_pred = len(_keys(pred_rows, "pred"))
+    tp = len(matched)
+    fp = n_pred - len(_keys(matched, "pred"))
+    fn = n_gt - len(_keys(matched, "gt"))
 
     metrics: dict[str, float | int] = {
         "n_gt": n_gt, "n_pred": n_pred, "tp": tp, "fp": fp, "fn": fn,
     }
     for point in IOU_POINTS:
-        soft = sum(1 for r in rows
-                   if r.status in {"TP", "FP"} and r.iou is not None and r.iou >= point)
-        soft = min(soft, n_pred, n_gt)
-        metrics[f"f1@{point}"] = _f1(soft, n_pred - soft, n_gt - soft)
+        hits = [r for r in rows
+                if r.status in {"TP", "FP"} and r.iou is not None and r.iou >= point]
+        metrics[f"f1@{point}"] = _f1_pr(
+            min(len(_keys(hits, "pred")), n_pred),
+            min(len(_keys(hits, "gt")), n_gt),
+            n_pred, n_gt,
+        )
 
     starts = [abs(r.d_start) for r in matched if r.d_start is not None]
     ends = [abs(r.d_end) for r in matched if r.d_end is not None]

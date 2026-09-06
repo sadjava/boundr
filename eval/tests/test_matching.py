@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from evallib.loader import Segment
-from evallib.matching import iou, match_segments
+from evallib.matching import containment, iou, match_segments, match_segments_many
 
 
 def seg(start: float, end: float, id_: str = "x") -> Segment:
@@ -63,3 +63,37 @@ def test_global_assignment_beats_greedy() -> None:
     gt = [seg(0, 10), seg(5, 15)]
     result = match_segments(pred, gt, threshold=0.5)
     assert sorted(p[:2] for p in result.pairs) == [(0, 1), (1, 0)]
+
+
+def test_containment_of_small_inside_large_is_one() -> None:
+    assert containment(seg(0, 10), seg(2, 4)) == 1.0
+
+
+def test_containment_disjoint_is_zero() -> None:
+    assert containment(seg(0, 1), seg(2, 3)) == 0.0
+
+
+def test_many_matches_one_prediction_to_several_gt() -> None:
+    pred = [seg(0, 10, "p")]
+    gt = [seg(0, 3, "g1"), seg(3, 6, "g2"), seg(6, 10, "g3")]
+    result = match_segments_many(pred, gt, threshold=0.5)
+    assert sorted(c for _, c, _ in result.pairs) == [0, 1, 2]
+    assert result.unmatched_gt == [] and result.unmatched_pred == []
+
+
+def test_many_matches_several_predictions_to_one_gt() -> None:
+    pred = [seg(0, 3, "p1"), seg(3, 6, "p2"), seg(6, 10, "p3")]
+    gt = [seg(0, 10, "g")]
+    result = match_segments_many(pred, gt, threshold=0.5)
+    assert sorted(r for r, _, _ in result.pairs) == [0, 1, 2]
+
+
+def test_many_leaves_distant_segments_unmatched() -> None:
+    result = match_segments_many([seg(0, 2, "p")], [seg(50, 52, "g")], threshold=0.5)
+    assert result.pairs == []
+    assert result.unmatched_pred == [0] and result.unmatched_gt == [0]
+
+
+def test_many_equals_one_to_one_on_exact_match() -> None:
+    pred, gt = [seg(0, 2, "p")], [seg(0, 2, "g")]
+    assert match_segments_many(pred, gt).pairs == match_segments(pred, gt).pairs
