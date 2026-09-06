@@ -25,7 +25,7 @@ def test_loads_export_shape(tmp_path: Path) -> None:
         ],
     })
     segments = load_annotation(path)
-    assert segments == [Segment("a", 0.0, 2.0, "open", "drawer", 1.0)]
+    assert segments == [Segment("a", 0.0, 2.0, "open", "drawer")]
 
 
 def test_loads_bare_list(tmp_path: Path) -> None:
@@ -35,7 +35,6 @@ def test_loads_bare_list(tmp_path: Path) -> None:
     segments = load_annotation(path)
     assert len(segments) == 1
     assert segments[0].start == 1.0
-    assert segments[0].keyframe is None
 
 
 def test_missing_object_becomes_empty_string(tmp_path: Path) -> None:
@@ -59,6 +58,6 @@ def test_non_numeric_bounds_raise(tmp_path: Path) -> None:
 
 
 def test_partition_valid_splits_on_reversed_bounds() -> None:
-    good = Segment("a", 0.0, 1.0, "open", "drawer", 0.5)
-    bad = Segment("b", 2.0, 1.0, "close", "drawer", None)
+    good = Segment("a", 0.0, 1.0, "open", "drawer")
+    bad = Segment("b", 2.0, 1.0, "close", "drawer")
     assert partition_valid([good, bad]) == ([good], [bad])

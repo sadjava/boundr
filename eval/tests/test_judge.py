@@ -77,6 +77,38 @@ def test_malformed_response_counts_as_mismatch(tmp_path: Path, monkeypatch) -> N
     assert judge.judge([JudgeQuery("action", "grab", "take")]) == [False]
 
 
+def test_wrong_length_reply_is_retried_in_halves(tmp_path: Path, monkeypatch) -> None:
+    class Flaky(FakePost):
+        def __init__(self) -> None:
+            super().__init__([])
+            self.sizes: list[int] = []
+
+        def __call__(self, url: str, **kwargs: object) -> "Flaky":
+            body = kwargs["json"]["messages"][0]["content"]  # type: ignore[index]
+            payload = json.loads(str(body)[str(body).rfind("["):])
+            self.sizes.append(len(payload))
+            self.matches = [True] if len(payload) > 2 else [True] * len(payload)
+            return super().__call__(url, **kwargs)
+
+    fake = Flaky()
+    monkeypatch.setattr("evallib.judge.requests.post", fake)
+    judge = Judge("model", "key", tmp_path / "cache.json")
+    queries = [JudgeQuery("action", f"a{i}", f"b{i}") for i in range(4)]
+    assert judge.judge(queries) == [True, True, True, True]
+    assert fake.sizes[0] == 4
+    assert fake.calls == 3
+
+
+def test_missing_choices_does_not_crash(tmp_path: Path, monkeypatch) -> None:
+    class NoChoices(FakePost):
+        def json(self) -> dict:
+            return {"error": {"message": "model unavailable"}}
+
+    monkeypatch.setattr("evallib.judge.requests.post", NoChoices([]))
+    judge = Judge("model", "key", tmp_path / "cache.json")
+    assert judge.judge([JudgeQuery("action", "open", "open")]) == [False]
+
+
 def test_empty_query_list_makes_no_call(tmp_path: Path, monkeypatch) -> None:
     fake = FakePost([])
     monkeypatch.setattr("evallib.judge.requests.post", fake)

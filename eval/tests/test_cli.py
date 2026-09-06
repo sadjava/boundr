@@ -5,8 +5,7 @@ from pathlib import Path
 
 from eval import main
 
-SEG = {"id": "a", "start": 0.0, "end": 2.0, "action": "open",
-       "object": "drawer", "keyframe": 1.0}
+SEG = {"id": "a", "start": 0.0, "end": 2.0, "action": "open", "object": "drawer"}
 
 
 def _dirs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -29,7 +28,10 @@ def test_perfect_run_exits_zero(tmp_path: Path, capsys) -> None:
     assert code == 0
     assert (out / "matching.csv").exists()
     assert (out / "results.csv").exists()
-    assert "PASS" in capsys.readouterr().out
+    captured = capsys.readouterr().out
+    assert "PASS" in captured
+    assert "action/object gates skipped" in captured
+    assert "action_acc" not in captured
 
 
 def test_failing_thresholds_exit_one(tmp_path: Path) -> None:

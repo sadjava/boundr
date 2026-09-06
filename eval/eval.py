@@ -16,7 +16,8 @@ from evallib.report import (
     write_results_csv,
 )
 
-THRESHOLDS = [("f1@0.5", 0.75), ("within_2s_rate", 0.75), ("both_acc", 0.80)]
+SEGMENT_THRESHOLDS = [("f1@0.5", 0.75), ("within_2s_rate", 0.75)]
+LABEL_THRESHOLDS = [("action_acc", 0.80), ("object_acc", 0.80)]
 
 _ROOT = Path(__file__).resolve().parent
 
@@ -31,6 +32,13 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--no-judge", action="store_true")
     parser.add_argument("--cache", type=Path, default=_ROOT / ".eval_cache.json")
     return parser.parse_args(argv)
+
+
+def _thresholds(judge: Judge) -> list[tuple[str, float]]:
+    gates = list(SEGMENT_THRESHOLDS)
+    if not judge.disabled:
+        gates.extend(LABEL_THRESHOLDS)
+    return gates
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,29 +93,30 @@ def main(argv: list[str] | None = None) -> int:
     write_matching_csv(all_rows, args.out_dir / "matching.csv")
     total = write_results_csv(per_clip, args.out_dir / "results.csv")
 
-    _print_report(per_clip, total, judge, missing, args.out_dir)
-    return 0 if all(total[name] >= limit for name, limit in THRESHOLDS) else 1
+    gates = _thresholds(judge)
+    _print_report(per_clip, total, judge, missing, args.out_dir, gates)
+    return 0 if all(total[name] >= limit for name, limit in gates) else 1
 
 
 def _print_report(per_clip, total, judge: Judge, missing: list[str],
-                  out_dir: Path) -> None:
+                  out_dir: Path, gates: list[tuple[str, float]]) -> None:
     if judge.disabled:
         print(f"judge: disabled ({judge.mismatch_count} "
               f"{'pair' if judge.mismatch_count == 1 else 'pairs'} "
-              f"counted as mismatch)")
+              f"counted as mismatch; action/object gates skipped)")
     else:
         print(f"judge: {judge.model}")
     if missing:
         print(f"missing predictions: {', '.join(missing)}")
 
     print(f"\n{'clip':<24}{'tp':>4}{'fp':>4}{'fn':>4}{'F1@0.5':>9}"
-          f"{'within2s':>10}{'both_acc':>10}")
+          f"{'within2s':>10}{'action':>10}{'object':>10}")
     for clip, rows in per_clip.items():
         _print_row(clip, metrics_for(rows))
     _print_row("__ALL__", total)
 
     print()
-    for name, limit in THRESHOLDS:
+    for name, limit in gates:
         verdict = "PASS" if total[name] >= limit else "FAIL"
         print(f"{verdict}  {name} = {fmt_metric(total[name])} (threshold {limit})")
     print(f"\nreports: {out_dir / 'results.csv'}, {out_dir / 'matching.csv'}")
@@ -117,7 +126,8 @@ def _print_row(clip: str, metrics: dict[str, float | int]) -> None:
     print(f"{clip:<24}{metrics['tp']:>4}{metrics['fp']:>4}{metrics['fn']:>4}"
           f"{fmt_metric(metrics['f1@0.5']):>9}"
           f"{fmt_metric(metrics['within_2s_rate']):>10}"
-          f"{fmt_metric(metrics['both_acc']):>10}")
+          f"{fmt_metric(metrics['action_acc']):>10}"
+          f"{fmt_metric(metrics['object_acc']):>10}")
 
 
 if __name__ == "__main__":

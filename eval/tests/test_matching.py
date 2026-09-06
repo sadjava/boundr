@@ -5,7 +5,7 @@ from evallib.matching import iou, match_segments
 
 
 def seg(start: float, end: float, id_: str = "x") -> Segment:
-    return Segment(id_, start, end, "open", "drawer", None)
+    return Segment(id_, start, end, "open", "drawer")
 
 
 def test_iou_identical_is_one() -> None:

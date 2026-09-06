@@ -16,7 +16,6 @@ class Segment:
     end: float
     action: str
     object: str
-    keyframe: float | None
 
 
 def _as_float(value: object, field: str, path: Path) -> float:
@@ -27,7 +26,6 @@ def _as_float(value: object, field: str, path: Path) -> float:
 
 
 def _as_label(value: object) -> str:
-    # Пустой объект в контракте продукта — это "", "none" или null.
     if value is None:
         return ""
     return str(value).strip()
@@ -48,14 +46,12 @@ def load_annotation(path: Path) -> list[Segment]:
     for index, item in enumerate(raw):
         if not isinstance(item, dict):
             raise LoadError(f"{path}: сегмент #{index} не объект")
-        keyframe = item.get("keyframe")
         segments.append(Segment(
             id=str(item.get("id", index)),
             start=_as_float(item.get("start"), "start", path),
             end=_as_float(item.get("end"), "end", path),
             action=_as_label(item.get("action")),
             object=_as_label(item.get("object")),
-            keyframe=None if keyframe is None else _as_float(keyframe, "keyframe", path),
         ))
     return segments
 

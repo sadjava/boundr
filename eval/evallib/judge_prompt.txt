@@ -1,12 +1,18 @@
-You are evaluating annotations of human actions in video. Each item gives you a
-pair of labels: one from an automatic annotation (pred) and one from the
-reference annotation (gt). For every pair decide whether they mean the same
-thing in the context of an everyday or industrial human action. Synonyms and
-close paraphrases ("grab" and "take", "cup" and "mug") count as a match.
-Different actions, or different objects, do not.
+You compare labels from an automatic video annotation (pred) with a human
+reference (gt). kind is "action" or "object".
 
-Reply with a strict JSON array of the same length and in the same order, with no
-text around it:
+Count as a match when they mean the same thing:
+- identical strings, including both empty
+- synonyms and paraphrases (grab / take / pick-up, put / place / put-down,
+  mug / cup, tap / faucet)
+- case, inflection, and separators (Opening / open, turn_on / turn-on)
+- a verb with or without a directional particle (pour / pour-into / pour-onto)
+- an object phrase whose head noun is the other label
+  (empty frying pan / pan, yellow mug / mug, bottle of milk / milk)
+
+Do not match different actions or different objects (open vs close, cup vs plate).
+
+Reply with a JSON array of the same length and order, no other text:
 [{"match": true, "reason": "short justification"}, ...]
 
 Pairs:

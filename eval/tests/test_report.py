@@ -8,19 +8,21 @@ from evallib.report import evaluate_clip, metrics_for, write_results_csv
 
 
 class StubJudge:
-    """Судья, который признаёт синонимом всё, что ему дали."""
+    """Судья с фиксированным вердиктом или списком вердиктов по порядку запросов."""
 
-    def __init__(self, verdict: bool = True) -> None:
+    def __init__(self, verdict: bool | list[bool] = True) -> None:
         self.verdict = verdict
         self.queries: list = []
 
     def judge(self, queries: list) -> list[bool]:
         self.queries.extend(queries)
-        return [self.verdict] * len(queries)
+        if isinstance(self.verdict, bool):
+            return [self.verdict] * len(queries)
+        return list(self.verdict)
 
 
-def seg(start, end, action="open", object_="drawer", id_="s", keyframe=None):
-    return Segment(id_, start, end, action, object_, keyframe)
+def seg(start, end, action="open", object_="drawer", id_="s"):
+    return Segment(id_, start, end, action, object_)
 
 
 def test_perfect_clip_gives_f1_one() -> None:
@@ -31,7 +33,8 @@ def test_perfect_clip_gives_f1_one() -> None:
     assert metrics["fp"] == 0
     assert metrics["fn"] == 0
     assert metrics["f1@0.5"] == 1.0
-    assert metrics["both_acc"] == 1.0
+    assert metrics["action_acc"] == 1.0
+    assert metrics["object_acc"] == 1.0
 
 
 def test_extra_and_missing_segments_are_counted() -> None:
@@ -64,16 +67,17 @@ def test_boundary_beyond_2s_is_not_counted() -> None:
     assert metrics["within_2s_rate"] == 0.0
 
 
-def test_exact_label_match_does_not_call_the_judge() -> None:
+def test_every_label_pair_goes_to_the_judge_raw() -> None:
     judge = StubJudge()
     evaluate_clip("clip", [seg(0, 2, "Opening")], [seg(0, 2, "open")], judge)
-    assert judge.queries == []
+    kinds = [(q.kind, q.pred, q.gt) for q in judge.queries]
+    assert kinds == [("action", "Opening", "open"), ("object", "drawer", "drawer")]
 
 
 def test_judge_decides_synonym() -> None:
     judge = StubJudge(verdict=True)
     rows = evaluate_clip("clip", [seg(0, 2, "grab")], [seg(0, 2, "take")], judge)
-    assert len(judge.queries) == 1
+    assert len(judge.queries) == 2
     assert rows[0].action_ok is True
     assert rows[0].action_via == "judge"
 
@@ -86,18 +90,23 @@ def test_judge_rejection_is_mismatch() -> None:
     assert metrics_for(rows)["action_acc"] == 0.0
 
 
-def test_keyframe_inside_gt_interval() -> None:
-    pred = [seg(0, 2, keyframe=1.0)]
-    gt = [seg(0, 2, keyframe=0.5)]
-    assert metrics_for(evaluate_clip("clip", pred, gt, StubJudge()))["keyframe_in_gt_rate"] == 1.0
+def test_action_and_object_accuracy_are_independent() -> None:
+    pred = [seg(0, 2, "grab", "drawer")]
+    gt = [seg(0, 2, "take", "drawer")]
+    rows = evaluate_clip("clip", pred, gt, StubJudge(verdict=[False, True]))
+    metrics = metrics_for(rows)
+    assert metrics["action_acc"] == 0.0
+    assert metrics["object_acc"] == 1.0
 
 
-def test_strict_accuracy_counts_missed_segments() -> None:
+def test_missed_segment_does_not_lower_label_accuracy() -> None:
     pred = [seg(0, 2)]
     gt = [seg(0, 2), seg(10, 12)]
     metrics = metrics_for(evaluate_clip("clip", pred, gt, StubJudge()))
-    assert metrics["both_acc"] == 1.0
-    assert metrics["both_acc_strict"] == 0.5
+    assert metrics["action_acc"] == 1.0
+    assert metrics["object_acc"] == 1.0
+    assert metrics["fn"] == 1
+    assert metrics["f1@0.5"] == 2 / 3
 
 
 def test_results_csv_has_a_total_row(tmp_path: Path) -> None:
@@ -109,6 +118,10 @@ def test_results_csv_has_a_total_row(tmp_path: Path) -> None:
     with path.open(encoding="utf-8") as fh:
         table = list(csv.DictReader(fh))
     assert [r["clip"] for r in table] == ["a", "b", "__ALL__"]
+    assert "action_acc" in table[0]
+    assert "object_acc" in table[0]
+    assert "both_acc" not in table[0]
+    assert "keyframe_in_gt_rate" not in table[0]
     assert total["tp"] == 1
     assert total["fn"] == 1
     assert total["f1@0.5"] == 2 / 3

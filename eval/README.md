@@ -1,7 +1,7 @@
 # Eval
 
 Compares an automatic annotation against a reference one and computes the case
-metrics: step-level F1, temporal boundary error, action and object accuracy.
+metrics: step-level F1, temporal boundary error, action accuracy, object accuracy.
 
 Runs locally, outside Docker: it touches neither the database nor S3.
 
@@ -13,13 +13,14 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 ## Running
 
-Offline only, no API key needed:
+Segmentation only, no API key. Label gates are skipped because every label pair
+goes to the judge:
 
 ```bash
 .venv/bin/python eval.py --pred assets/pred --gt assets/gt --out-dir reports --no-judge
 ```
 
-With the LLM judge, which also accepts synonymous labels:
+With the LLM judge (needed to score actions and objects):
 
 ```bash
 OPENROUTER_API_KEY=sk-or-... .venv/bin/python eval.py \
@@ -27,51 +28,60 @@ OPENROUTER_API_KEY=sk-or-... .venv/bin/python eval.py \
   --judge-model openai/gpt-4o-mini
 ```
 
-On the bundled `assets/` the difference is visible in one number: `both_acc` is
-0.8462 offline and 1.0 with the judge, because `grab`/`take`, `mug`/`cup` and
-`place`/`put` are then counted as hits.
-
 Files are paired by name: `gt/clip_01.json` ↔ `pred/clip_01.json`. A reference
 file with no prediction is not skipped — all of its segments are counted as
 misses, otherwise a crashed pipeline would improve the score.
 
 The input format is the Boundr export (`{video_id, duration, fps, segments}`,
-seconds); a bare list of segments is accepted too. `assets/` holds six synthetic
-clips covering the interesting cases — exact match, shifted boundaries,
-synonymous labels, merged steps, a boundary beyond the tolerance, and a missing
-prediction. Put your own data in `data/`, which is not tracked by git.
+seconds); a bare list of segments is accepted too. `keyframe` in the export is
+ignored. `assets/` holds six synthetic clips covering the interesting cases —
+exact match, shifted boundaries, synonymous labels, merged steps, a boundary
+beyond the tolerance, and a missing prediction. Put your own data in `data/`,
+which is not tracked by git.
 
 ## How it scores
 
 Segments are matched by temporal IoU with the Hungarian algorithm; pairs below
 IoU 0.5 are dropped. Surviving pairs are true positives, leftover predictions are
-false positives, leftover reference segments are false negatives.
+false positives, leftover reference segments are false negatives. F1 does not
+look at labels.
 
-Boundary error and label accuracy are computed over matched pairs only. Alongside
-`both_acc` the report prints `both_acc_strict`, which divides by the number of
-reference segments and therefore also pays for missed steps — that is the honest
-number to quote.
+Boundary error and label accuracy are computed over matched pairs only.
+`within_2s_rate` is the share of TP pairs where both start and end are within
+2 seconds of the reference. `action_acc` and `object_acc` are scored separately.
+
+## Success gates
+
+| Metric | Threshold | What it measures |
+|---|---|---|
+| `f1@0.5` | ≥ 0.75 | step-level segmentation |
+| `within_2s_rate` | ≥ 0.75 | temporal boundaries |
+| `action_acc` | ≥ 0.80 | action labels, judged independently |
+| `object_acc` | ≥ 0.80 | object labels, judged independently |
+
+Label gates apply only when the judge is enabled.
 
 ## The judge
 
-Labels are first compared offline after normalisation (lower case, articles and
-English endings stripped). Whatever does not match goes to an LLM through
-OpenRouter, so `grab` vs `take` counts as a hit.
+Every matched action and every matched object is sent to an LLM through
+OpenRouter as written. The judge treats synonyms, hyphen vs underscore, verb
+particles (`pour` / `pour-into`) and a head noun inside a longer phrase
+(`empty frying pan` / `pan`) as a match. Requests go in small batches; a
+malformed reply is retried in halves instead of zeroing the whole clip.
+Changing the prompt invalidates the cache automatically.
 
 The key is read from the environment; the script does not load `.env` itself.
-Without a key only the offline layer runs and the header says
-`judge: disabled (N pairs counted as mismatch)`. `--no-judge` disables the second
-layer explicitly, `--judge-model` selects the model.
+Without a key, or with `--no-judge`, every label pair is counted as a mismatch
+and the header says `judge: disabled`. `--judge-model` selects the model.
 
-Verdicts are cached in `.eval_cache.json`, so a repeated run costs nothing and,
-more importantly, is reproducible — the number in a presentation will not drift
-because the model answered differently this time.
+Verdicts are cached in `.eval_cache.json`, so a repeated run costs nothing and
+is reproducible.
 
 ## Output
 
 - `results.csv` — one row per clip plus an `__ALL__` row with the set total;
 - `matching.csv` — every segment pair with its status (TP/FP/FN), boundary deltas
-  and how each label was decided (`exact` / `judge` / `mismatch`).
+  and how each label was decided (`judge` / `mismatch`).
 
 Exit codes: `0` — every threshold met, `1` — at least one missed, `2` — the
 reference annotation is broken.

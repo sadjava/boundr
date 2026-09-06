@@ -6,7 +6,6 @@ from pathlib import Path
 from statistics import mean
 
 from evallib.judge import JudgeQuery
-from evallib.labels import labels_equal, normalize
 from evallib.loader import Segment
 from evallib.matching import match_segments
 
@@ -36,8 +35,6 @@ class PairRow:
     gt_object: str
     object_ok: bool | None
     object_via: str
-    pred_keyframe: float | None
-    keyframe_in_gt: bool | None
 
 
 MATCHING_COLUMNS = [f.name for f in fields(PairRow)]
@@ -46,8 +43,7 @@ RESULTS_COLUMNS = [
     "clip", "n_gt", "n_pred", "tp", "fp", "fn",
     "f1@0.5", "f1@0.25", "f1@0.1",
     "mae_start", "mae_end", "p95_start", "p95_end", "within_2s_rate",
-    "action_acc", "object_acc", "both_acc", "both_acc_strict",
-    "keyframe_in_gt_rate",
+    "action_acc", "object_acc",
 ]
 
 
@@ -61,7 +57,7 @@ def evaluate_clip(
 
     rows: list[PairRow] = []
     queries: list[JudgeQuery] = []
-    slots: list[tuple[int, str]] = []  # (индекс строки, "action"|"object")
+    slots: list[tuple[int, str]] = []
 
     for pred_index, gt_index, score in result.pairs:
         p, g = pred[pred_index], gt[gt_index]
@@ -82,31 +78,21 @@ def evaluate_clip(
             action_ok=None, action_via="",
             pred_object=p.object, gt_object=g.object,
             object_ok=None, object_via="",
-            pred_keyframe=p.keyframe,
-            keyframe_in_gt=None if p.keyframe is None
-            else g.start <= p.keyframe <= g.end,
         )
         rows.append(row)
         if not matched:
-            # Пара ниже порога 0.5 — это FP и FN, метки на ней не оцениваем.
             continue
         for kind, pred_label, gt_label in (
             ("action", p.action, g.action),
             ("object", p.object, g.object),
         ):
-            if labels_equal(pred_label, gt_label):
-                setattr(row, f"{kind}_ok", True)
-                setattr(row, f"{kind}_via", "exact")
-            else:
-                queries.append(JudgeQuery(kind, normalize(pred_label),
-                                          normalize(gt_label)))
-                slots.append((len(rows) - 1, kind))
+            queries.append(JudgeQuery(kind, pred_label, gt_label))
+            slots.append((len(rows) - 1, kind))
 
     for (row_index, kind), verdict in zip(slots, judge.judge(queries)):
         setattr(rows[row_index], f"{kind}_ok", bool(verdict))
         setattr(rows[row_index], f"{kind}_via", "judge" if verdict else "mismatch")
 
-    # Пары ниже порога 0.5 разворачиваются обратно в отдельные FP и FN.
     below = [r for r in rows if r.status == "FP"]
     rows = [r for r in rows if r.status == "TP"]
     for row in below:
@@ -127,7 +113,6 @@ def _blank(clip: str, status: str) -> PairRow:
         d_start=None, d_end=None, within_2s=None,
         pred_action="", gt_action="", action_ok=None, action_via="",
         pred_object="", gt_object="", object_ok=None, object_via="",
-        pred_keyframe=None, keyframe_in_gt=None,
     )
 
 
@@ -136,7 +121,6 @@ def _pred_only(clip: str, segment: Segment) -> PairRow:
     row.pred_id = segment.id
     row.pred_start, row.pred_end = segment.start, segment.end
     row.pred_action, row.pred_object = segment.action, segment.object
-    row.pred_keyframe = segment.keyframe
     return row
 
 
@@ -153,7 +137,6 @@ def _lone_pred_row(clip: str, row: PairRow) -> PairRow:
     out.pred_id = row.pred_id
     out.pred_start, out.pred_end = row.pred_start, row.pred_end
     out.pred_action, out.pred_object = row.pred_action, row.pred_object
-    out.pred_keyframe = row.pred_keyframe
     out.iou = row.iou
     return out
 
@@ -190,8 +173,6 @@ def metrics_for(rows: list[PairRow]) -> dict[str, float | int]:
         "n_gt": n_gt, "n_pred": n_pred, "tp": tp, "fp": fp, "fn": fn,
     }
     for point in IOU_POINTS:
-        # Матчинг посчитан один раз; более мягкий порог просто возвращает в TP
-        # пары, разложенные на FP+FN.
         soft = sum(1 for r in rows
                    if r.status in {"TP", "FP"} and r.iou is not None and r.iou >= point)
         soft = min(soft, n_pred, n_gt)
@@ -208,21 +189,12 @@ def metrics_for(rows: list[PairRow]) -> dict[str, float | int]:
 
     action_hits = sum(1 for r in matched if r.action_ok)
     object_hits = sum(1 for r in matched if r.object_ok)
-    both_hits = sum(1 for r in matched if r.action_ok and r.object_ok)
     metrics["action_acc"] = round(action_hits / tp, 4) if tp else 0.0
     metrics["object_acc"] = round(object_hits / tp, 4) if tp else 0.0
-    metrics["both_acc"] = round(both_hits / tp, 4) if tp else 0.0
-    metrics["both_acc_strict"] = round(both_hits / n_gt, 4) if n_gt else 0.0
-
-    keyframes = [r for r in matched if r.keyframe_in_gt is not None]
-    metrics["keyframe_in_gt_rate"] = round(
-        mean([1.0 if r.keyframe_in_gt else 0.0 for r in keyframes]), 4
-    ) if keyframes else 0.0
     return metrics
 
 
 def fmt_metric(value: float | int) -> str:
-    """Форматирует метрику для вывода: четыре значащие цифры, без хвоста float."""
     if isinstance(value, bool) or isinstance(value, int):
         return str(value)
     text = f"{value:.4g}"
