@@ -9,3 +9,4 @@ smoke*/
 *.tar.gz
 *.lock
 !uv.lock
+runs/

@@ -1,7 +1,8 @@
-"""Check Marlin caption target construction from ground-truth annotations."""
+"""Check target construction; optionally check real tokenizer supervision using a visual cache."""
 
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 from pathlib import Path
@@ -66,5 +67,48 @@ def check_targets():
     print("target construction: ok")
 
 
+def check_supervision(cache, processor_path):
+    import torch
+
+    from model import assemble_example, load_processor, render_prompt
+
+    record = json.loads((cache / "train.jsonl").read_text().splitlines()[0])
+    original = json.loads(Path(record["annotation"]).read_text())
+    visual = torch.load(record["visual_cache"], map_location="cpu", weights_only=True)
+    assert record["target"] == format_caption(visual["scene"], action_events(original))
+
+    processor = load_processor(str(processor_path), revision=None)
+    rendered = render_prompt(processor, record["video"], record["duration"])
+    assert PROMPT in rendered and "Clip duration:" not in rendered
+
+    batch = assemble_example(processor, record, visual)
+    saved = torch.load(record["cache"], map_location="cpu", weights_only=True)
+    for key in ("input_ids", "attention_mask", "position_ids", "labels"):
+        assert torch.equal(saved[key], batch[key]), key
+
+    length = batch["prompt_length"]
+    assert torch.all(batch["labels"][:, :length] == -100)
+    assert torch.equal(batch["labels"][:, length:], batch["input_ids"][:, length:])
+
+    supervised = processor.tokenizer.decode(batch["labels"][0, length:], skip_special_tokens=False,
+                                             clean_up_tokenization_spaces=False)
+    assert supervised == record["target"] + "<|im_end|>"
+    special_ids = set(processor.tokenizer.all_special_ids)
+    markers = [token for token in batch["labels"][0, length:].tolist() if token in special_ids]
+    assert processor.tokenizer.convert_ids_to_tokens(markers) == ["<|im_end|>"]
+
+    print("native prompt and full-response supervision: ok")
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--visual-cache", type=Path)
+    parser.add_argument("--processor", type=Path, help="Local native Marlin processor snapshot")
+
+    args = parser.parse_args()
+    if bool(args.visual_cache) != bool(args.processor):
+        parser.error("Supply --visual-cache and --processor together")
+
     check_targets()
+    if args.visual_cache:
+        check_supervision(args.visual_cache, args.processor)
