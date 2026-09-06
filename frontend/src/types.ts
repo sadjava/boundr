@@ -42,7 +42,26 @@ export interface Task {
   project_id: string;
   name: string;
   video_count: number;
+  annotated_count: number;
   created_at: string;
+  updated_at: string;
+}
+
+export type FineTuneStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
+
+export interface FineTune {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  name: string;
+  display_name: string;
+  status: FineTuneStatus;
+  error_msg: string | null;
+  s3_prefix: string;
+  task_ids: string[];
+  manifest: Record<string, unknown> | null;
+  created_at: string;
+  started_at: string | null;
   updated_at: string;
 }
 

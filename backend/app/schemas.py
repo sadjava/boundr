@@ -87,21 +87,70 @@ class TaskOut(BaseModel):
     project_id: uuid.UUID
     name: str
     video_count: int = 0
+    annotated_count: int = 0
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_task(cls, task, video_count: int = 0) -> TaskOut:
+    def from_task(cls, task, video_count: int = 0, annotated_count: int = 0) -> TaskOut:
         return cls(
             id=task.id,
             project_id=task.project_id,
             name=task.name,
             video_count=video_count,
+            annotated_count=annotated_count,
             created_at=task.created_at,
             updated_at=task.updated_at,
         )
+
+
+class FineTuneCreate(BaseModel):
+    task_ids: list[uuid.UUID] = Field(min_length=1)
+    name: str | None = Field(default=None, max_length=32)
+
+
+class FineTuneOut(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    project_id: uuid.UUID | None
+    name: str
+    display_name: str
+    status: str
+    error_msg: str | None
+    s3_prefix: str
+    task_ids: list[uuid.UUID] = Field(default_factory=list)
+    manifest: dict | None = None
+    created_at: datetime
+    started_at: datetime | None
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_fine_tune(cls, row) -> FineTuneOut:
+        raw_ids = row.task_ids or []
+        return cls(
+            id=row.id,
+            user_id=row.user_id,
+            project_id=row.project_id,
+            name=row.name,
+            display_name=row.display_name,
+            status=row.status.value if hasattr(row.status, "value") else str(row.status),
+            error_msg=row.error_msg,
+            s3_prefix=row.s3_prefix,
+            task_ids=[uuid.UUID(str(t)) for t in raw_ids],
+            manifest=row.manifest,
+            created_at=row.created_at,
+            started_at=row.started_at,
+            updated_at=row.updated_at,
+        )
+
+
+class InternalFineTuneCompleteIn(BaseModel):
+    s3_prefix: str
+    manifest: dict = Field(default_factory=dict)
 
 
 class VideoCreate(BaseModel):

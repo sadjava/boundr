@@ -5,7 +5,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
 import InlineRename from "../components/InlineRename";
 import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
-import type { Project, Task } from "../types";
+import type { FineTune, Project, Task } from "../types";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -25,26 +25,69 @@ export default function ProjectDetail() {
   const [includeVideos, setIncludeVideos] = useState(false);
   const [formats, setFormats] = useState<ExportFormats>({ json: true, csv: false });
   const [exporting, setExporting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [ftOpen, setFtOpen] = useState(false);
+  const [ftName, setFtName] = useState("");
+  const [ftStarting, setFtStarting] = useState(false);
+  const [ftStopping, setFtStopping] = useState(false);
+  const [activeFt, setActiveFt] = useState<FineTune | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [p, t] = await Promise.all([
+    const [p, t, fts] = await Promise.all([
       api.get<Project>(`/api/projects/${id}`),
       api.get<Task[]>(`/api/projects/${id}/tasks`),
+      api.get<FineTune[]>(`/api/projects/${id}/fine-tunes`).catch(() => [] as FineTune[]),
     ]);
     setProject(p);
     setTasks(t);
+    const inFlight = fts.find((f) => f.status === "QUEUED" || f.status === "PROCESSING");
+    setActiveFt((prev) => {
+      if (inFlight) return inFlight;
+      if (prev && (prev.status === "QUEUED" || prev.status === "PROCESSING")) {
+        const updated = fts.find((f) => f.id === prev.id);
+        return updated ?? prev;
+      }
+      return prev;
+    });
   }, [id]);
 
   useEffect(() => {
     load().catch((e) => setError(e.message));
   }, [load]);
 
+  useEffect(() => {
+    if (!activeFt || activeFt.status === "COMPLETED" || activeFt.status === "FAILED") return;
+    const t = setInterval(() => {
+      api
+        .get<FineTune>(`/api/fine-tunes/${activeFt.id}`)
+        .then(setActiveFt)
+        .catch(() => undefined);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [activeFt]);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q ? tasks.filter((t) => t.name.toLowerCase().includes(q)) : tasks;
     return sortByDates(filtered, sort);
   }, [tasks, query, sort]);
+
+  const selectedTasks = useMemo(
+    () => tasks.filter((t) => selected.has(t.id)),
+    [tasks, selected],
+  );
+  const selectedAnnotated = selectedTasks.reduce((n, t) => n + (t.annotated_count || 0), 0);
+
+  function toggleTask(task: Task) {
+    if ((task.annotated_count || 0) === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(task.id)) next.delete(task.id);
+      else next.add(task.id);
+      return next;
+    });
+  }
 
   async function confirmDelete() {
     if (!pending) return;
@@ -53,6 +96,11 @@ export default function ProjectDetail() {
     try {
       if (pending.kind === "task") {
         await api.delete(`/api/tasks/${pending.task.id}`);
+        setSelected((prev) => {
+          const next = new Set(prev);
+          next.delete(pending.task.id);
+          return next;
+        });
         setPending(null);
         await load();
       } else if (project) {
@@ -112,11 +160,48 @@ export default function ProjectDetail() {
     }
   }
 
+  async function startFineTune() {
+    if (!project || selected.size === 0) return;
+    setFtStarting(true);
+    setError(null);
+    try {
+      const body: { task_ids: string[]; name?: string } = {
+        task_ids: Array.from(selected),
+      };
+      const trimmed = ftName.trim();
+      if (trimmed) body.name = trimmed;
+      const row = await api.post<FineTune>(`/api/projects/${project.id}/fine-tunes`, body);
+      setActiveFt(row);
+      setFtOpen(false);
+      setFtName("");
+      setSelected(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fine-tune failed to start");
+    } finally {
+      setFtStarting(false);
+    }
+  }
+
+  async function cancelActiveFt() {
+    if (!activeFt) return;
+    setFtStopping(true);
+    setError(null);
+    try {
+      setActiveFt(await api.post<FineTune>(`/api/fine-tunes/${activeFt.id}/cancel`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setFtStopping(false);
+    }
+  }
+
   if (!project) {
     return <p className="page text-[var(--color-muted)]">{error || "Loading…"}</p>;
   }
 
   const hasVideos = tasks.some((t) => t.video_count > 0);
+  const canFineTune = selected.size > 0 && selectedAnnotated > 0;
+  const ftActive = activeFt?.status === "QUEUED" || activeFt?.status === "PROCESSING";
 
   return (
     <div className="page">
@@ -181,8 +266,50 @@ export default function ProjectDetail() {
         </div>
       </div>
       {error && <p className="text-[var(--color-bad)]">{error}</p>}
+      {activeFt && (activeFt.status === "COMPLETED" || activeFt.status === "FAILED") && (
+        <p
+          className={
+            activeFt.status === "FAILED"
+              ? "text-[var(--color-bad)]"
+              : "text-[var(--color-ok)]"
+          }
+        >
+          Fine-tune <code>{activeFt.name}</code>: {activeFt.status}
+          {activeFt.status === "FAILED" && activeFt.error_msg
+            ? ` — ${activeFt.error_msg.split("\n")[0]}`
+            : null}
+          {activeFt.status === "COMPLETED"
+            ? " — available in the Model menu on tasks and videos."
+            : null}
+        </p>
+      )}
 
-      <h2 className="mt-0 mb-3 text-lg font-semibold">Tasks</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="m-0 text-lg font-semibold">Tasks</h2>
+        <button
+          className={ftActive ? "btn btn-danger" : "btn btn-primary"}
+          disabled={ftStopping || (!ftActive && (ftStarting || !canFineTune))}
+          onClick={() => {
+            if (ftActive) void cancelActiveFt();
+            else setFtOpen(true);
+          }}
+          title={
+            ftActive
+              ? undefined
+              : canFineTune
+                ? undefined
+                : "Select tasks that have annotated videos"
+          }
+        >
+          {ftStopping
+            ? "Stopping…"
+            : ftActive
+              ? "Stop"
+              : ftStarting
+                ? "Starting…"
+                : `Fine-tune${selected.size > 0 ? ` (${selected.size})` : ""}`}
+        </button>
+      </div>
       <ListToolbar query={query} onQuery={setQuery} sort={sort} onSort={setSort} placeholder="Task name" />
 
       <div className="grid gap-2">
@@ -193,40 +320,72 @@ export default function ProjectDetail() {
               : "No matching tasks."}
           </p>
         )}
-        {visible.map((t) => (
-          <div
-            key={t.id}
-            className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3"
-          >
-            <div className="min-w-0 flex-1">
-              <InlineRename
-                value={t.name}
-                onSave={(name) => renameTask(t, name)}
-              >
-                <Link to={`/tasks/${t.id}`} className="min-w-0 truncate font-medium text-[var(--color-text)] no-underline">
-                  {t.name}
-                </Link>
-              </InlineRename>
-              <div className="text-xs text-[var(--color-muted)]">
-                {t.video_count} {t.video_count === 1 ? "video" : "videos"}
-              </div>
-            </div>
-            <button
-              className="btn btn-ghost"
-              disabled={t.video_count === 0}
-              onClick={() => {
-                setIncludeVideos(false);
-                setFormats({ json: true, csv: false });
-                setExportTarget({ kind: "task", task: t });
+        {visible.map((t) => {
+          const selectable = (t.annotated_count || 0) > 0;
+          return (
+            <div
+              key={t.id}
+              role="link"
+              tabIndex={0}
+              className="flex cursor-pointer items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3"
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("button, input")) return;
+                navigate(`/tasks/${t.id}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                if ((e.target as HTMLElement).closest("button, input")) return;
+                e.preventDefault();
+                navigate(`/tasks/${t.id}`);
               }}
             >
-              Export
-            </button>
-            <button className="btn btn-danger" onClick={() => setPending({ kind: "task", task: t })}>
-              Delete
-            </button>
-          </div>
-        ))}
+              <input
+                type="checkbox"
+                className="shrink-0"
+                checked={selected.has(t.id)}
+                disabled={!selectable}
+                onChange={() => toggleTask(t)}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`Select ${t.name} for fine-tune`}
+                title={selectable ? undefined : "No annotated videos in this task"}
+              />
+              <div className="min-w-0 flex-1">
+                <InlineRename
+                  value={t.name}
+                  onSave={(name) => renameTask(t, name)}
+                >
+                  <span className="min-w-0 truncate font-medium">{t.name}</span>
+                </InlineRename>
+                <div className="text-xs text-[var(--color-muted)]">
+                  {t.video_count} {t.video_count === 1 ? "video" : "videos"}
+                  {" · "}
+                  {t.annotated_count || 0} annotated
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost"
+                disabled={t.video_count === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIncludeVideos(false);
+                  setFormats({ json: true, csv: false });
+                  setExportTarget({ kind: "task", task: t });
+                }}
+              >
+                Export
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPending({ kind: "task", task: t });
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          );
+        })}
       </div>
       {pending && (
         <ConfirmDialog
@@ -257,6 +416,67 @@ export default function ProjectDetail() {
           onCancel={() => !exporting && setExportTarget(null)}
           onConfirm={runExport}
         />
+      )}
+      {ftOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#541A1A]/40 p-4"
+          onClick={() => !ftStarting && setFtOpen(false)}
+        >
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ft-title"
+            className="w-full max-w-md rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-5"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!ftStarting) void startFineTune();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && !ftStarting) setFtOpen(false);
+            }}
+          >
+            <h2 id="ft-title" className="mt-0 mb-2 text-lg font-semibold">
+              Fine-tune Marlin?
+            </h2>
+            <p className="mt-0 mb-3 text-sm text-[var(--color-muted)]">
+              {selected.size} {selected.size === 1 ? "task" : "tasks"}, {selectedAnnotated}{" "}
+              annotated {selectedAnnotated === 1 ? "video" : "videos"}. Default name includes
+              the project and date; checkpoint goes under your user S3 prefix.
+            </p>
+            <label className="mb-4 block text-sm text-[var(--color-muted)]">
+              Name (optional)
+              <input
+                className="field mt-1 w-full"
+                placeholder="marlin_ft_project_20260906_ab12"
+                value={ftName}
+                disabled={ftStarting}
+                onChange={(e) => setFtName(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <ul className="mt-0 mb-5 max-h-40 list-disc overflow-y-auto pl-5 text-sm">
+              {selectedTasks.map((t) => (
+                <li key={t.id}>
+                  {t.name} ({t.annotated_count} annotated)
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={ftStarting}
+                onClick={() => setFtOpen(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={ftStarting || !canFineTune}>
+                {ftStarting ? "Starting…" : "Start fine-tune"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   );

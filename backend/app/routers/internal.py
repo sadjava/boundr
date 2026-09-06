@@ -4,9 +4,25 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import require_internal_token
 from app.labels import clean_labels
-from app.models import Job, JobStatus, Project, Video, VideoStatus, utcnow
-from app.schemas import InternalCompleteIn, InternalFailIn, InternalStatusIn, JobOut
-from app.services import upsert_inference, upsert_working_annotation
+from app.models import (
+    FineTune,
+    FineTuneStatus,
+    Job,
+    JobStatus,
+    Project,
+    Video,
+    VideoStatus,
+    utcnow,
+)
+from app.schemas import (
+    FineTuneOut,
+    InternalCompleteIn,
+    InternalFailIn,
+    InternalFineTuneCompleteIn,
+    InternalStatusIn,
+    JobOut,
+)
+from app.services import fine_tune_dataset, upsert_inference, upsert_working_annotation
 
 router = APIRouter(
     prefix="/api/internal/jobs",
@@ -100,3 +116,69 @@ def get_internal_project(project_id: str, db: Session = Depends(get_db)) -> dict
         "action_types": clean_labels(project.action_types),
         "objects": clean_labels(project.objects),
     }
+
+
+fine_tunes_internal = APIRouter(
+    prefix="/api/internal/fine-tunes",
+    tags=["internal"],
+    dependencies=[Depends(require_internal_token)],
+)
+
+
+def _fine_tune_or_404(db: Session, fine_tune_id: str) -> FineTune:
+    row = db.get(FineTune, fine_tune_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fine-tune not found")
+    return row
+
+
+@fine_tunes_internal.get("/{fine_tune_id}/dataset")
+def get_fine_tune_dataset(fine_tune_id: str, db: Session = Depends(get_db)) -> dict:
+    return fine_tune_dataset(db, _fine_tune_or_404(db, fine_tune_id))
+
+
+@fine_tunes_internal.post("/{fine_tune_id}/status", response_model=FineTuneOut)
+def set_fine_tune_status(
+    fine_tune_id: str, body: InternalStatusIn, db: Session = Depends(get_db)
+) -> FineTuneOut:
+    row = _fine_tune_or_404(db, fine_tune_id)
+    if body.status != FineTuneStatus.PROCESSING.value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported status")
+    if row.status not in {FineTuneStatus.QUEUED, FineTuneStatus.PROCESSING}:
+        return FineTuneOut.from_fine_tune(row)
+    row.status = FineTuneStatus.PROCESSING
+    row.started_at = row.started_at or utcnow()
+    row.error_msg = None
+    db.commit()
+    db.refresh(row)
+    return FineTuneOut.from_fine_tune(row)
+
+
+@fine_tunes_internal.post("/{fine_tune_id}/complete", response_model=FineTuneOut)
+def complete_fine_tune(
+    fine_tune_id: str, body: InternalFineTuneCompleteIn, db: Session = Depends(get_db)
+) -> FineTuneOut:
+    row = _fine_tune_or_404(db, fine_tune_id)
+    if row.status not in {FineTuneStatus.QUEUED, FineTuneStatus.PROCESSING}:
+        return FineTuneOut.from_fine_tune(row)
+    row.status = FineTuneStatus.COMPLETED
+    row.error_msg = None
+    row.s3_prefix = body.s3_prefix or row.s3_prefix
+    row.manifest = body.manifest
+    db.commit()
+    db.refresh(row)
+    return FineTuneOut.from_fine_tune(row)
+
+
+@fine_tunes_internal.post("/{fine_tune_id}/fail", response_model=FineTuneOut)
+def fail_fine_tune(
+    fine_tune_id: str, body: InternalFailIn, db: Session = Depends(get_db)
+) -> FineTuneOut:
+    row = _fine_tune_or_404(db, fine_tune_id)
+    if row.status not in {FineTuneStatus.QUEUED, FineTuneStatus.PROCESSING}:
+        return FineTuneOut.from_fine_tune(row)
+    row.status = FineTuneStatus.FAILED
+    row.error_msg = body.error_msg
+    db.commit()
+    db.refresh(row)
+    return FineTuneOut.from_fine_tune(row)

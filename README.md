@@ -47,6 +47,7 @@ Git-ignored `./models/marlin/` directory.
 | Frontend | http://localhost:3000 |
 | API docs | http://localhost:8000/docs |
 | Marlin llama.cpp API | http://localhost:8085 |
+| Fine-tune service | http://localhost:8002/health |
 | MinIO console | http://localhost:9001 |
 | Adminer (database) | http://localhost:8080 |
 | Redis Commander (queue) | http://localhost:8081 |
@@ -105,6 +106,7 @@ Details: [docs/architecture.md](docs/architecture.md).
 backend/      FastAPI service — API, auth, persistence, export
 frontend/     React + TypeScript UI — timeline, annotation editor
 ml-service/   Redis consumer + inference pipelines
+finetune-service/  Redis consumer for domain fine-tune jobs (mock)
 infra/        MinIO CORS and Marlin llama.cpp image
 docs/         Project, product and engineering documentation
 ```

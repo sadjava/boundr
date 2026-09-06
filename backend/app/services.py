@@ -10,6 +10,8 @@ from app.annotation_io import parse_annotation_payload
 from app.models import (
     Annotation,
     AnnotationStatus,
+    FineTune,
+    FineTuneStatus,
     Inference,
     Job,
     JobStatus,
@@ -20,8 +22,10 @@ from app.models import (
     VideoStatus,
     utcnow,
 )
-from app.s3 import video_s3_key
-from app.queue import enqueue_job, flush_queue
+from app.s3 import fine_tune_s3_prefix, video_s3_key
+from app.queue import enqueue_finetune, enqueue_job, flush_queue
+from app.finetune import default_display_name, default_fine_tune_name, validate_fine_tune_name
+from app.schemas import INFERENCE_TYPES
 
 
 def pipeline_version(pipeline: str) -> int | None:
@@ -241,7 +245,9 @@ def create_and_enqueue_job(
 
     # Marlin's parsed labels depend on mutable project catalogs,
     # which are not part of the cache key.
-    ver = pipeline_version(pipeline) if pipeline not in {"marlin", "marlin_gpt"} else None
+    # Marlin family (base + fine-tunes) skips cache: catalogs and checkpoints vary.
+    skip_cache = pipeline in {"marlin", "marlin_gpt"} or pipeline.startswith("marlin_ft_")
+    ver = pipeline_version(pipeline) if not skip_cache else None
     cached = get_inference(db, video.id, pipeline, ver) if ver is not None else None
     if cached is not None:
         return apply_cached_inference(db, video, cached)
@@ -274,3 +280,176 @@ def cancel_active_jobs(db: Session) -> int:
     flush_queue()
     db.commit()
     return len(jobs)
+
+
+def _annotation_has_segments(data) -> bool:
+    if not isinstance(data, dict):
+        return False
+    segments = data.get("segments")
+    return isinstance(segments, list) and len(segments) > 0
+
+
+def annotated_videos_for_tasks(
+    db: Session, project_id, task_ids: list
+) -> list[tuple[Video, Annotation]]:
+    """Videos in these tasks with any annotation that has non-empty segments."""
+    if not task_ids:
+        return []
+    rows = db.execute(
+        select(Video, Annotation)
+        .join(Annotation, Annotation.video_id == Video.id)
+        .where(
+            Video.project_id == project_id,
+            Video.task_id.in_(task_ids),
+        )
+        .order_by(Video.created_at.asc())
+    ).all()
+    return [(video, ann) for video, ann in rows if _annotation_has_segments(ann.data)]
+
+
+def annotated_counts_by_task(db: Session, project_id) -> dict:
+    rows = db.execute(
+        select(Video.task_id, Annotation.data)
+        .join(Annotation, Annotation.video_id == Video.id)
+        .where(Video.project_id == project_id)
+    ).all()
+    counts: dict = {}
+    for task_id, data in rows:
+        if _annotation_has_segments(data):
+            counts[task_id] = counts.get(task_id, 0) + 1
+    return counts
+
+
+def known_pipeline_ids(db: Session, user: User) -> set[str]:
+    known = {item["id"] for item in INFERENCE_TYPES}
+    ft_names = db.scalars(
+        select(FineTune.name).where(
+            FineTune.user_id == user.id,
+            FineTune.status == FineTuneStatus.COMPLETED,
+        )
+    ).all()
+    known.update(ft_names)
+    return known
+
+
+def list_inference_for_user(db: Session, user: User) -> list[dict]:
+    items = list(INFERENCE_TYPES)
+    rows = db.scalars(
+        select(FineTune)
+        .where(FineTune.user_id == user.id, FineTune.status == FineTuneStatus.COMPLETED)
+        .order_by(FineTune.created_at.desc())
+    ).all()
+    for row in rows:
+        items.append(
+            {
+                "id": row.name,
+                "name": row.display_name,
+                "description": f"Fine-tuned Marlin checkpoint ({row.name})",
+            }
+        )
+    return items
+
+
+def get_fine_tune_for_user(db: Session, fine_tune_id, user: User) -> FineTune:
+    row = db.scalar(
+        select(FineTune).where(FineTune.id == fine_tune_id, FineTune.user_id == user.id)
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fine-tune not found")
+    return row
+
+
+def create_and_enqueue_fine_tune(
+    db: Session,
+    project: Project,
+    user: User,
+    task_ids: list,
+    name: str | None = None,
+) -> FineTune:
+    tasks = list(
+        db.scalars(
+            select(Task).where(Task.project_id == project.id, Task.id.in_(task_ids))
+        ).all()
+    )
+    if len(tasks) != len(set(task_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="One or more tasks are not in this project",
+        )
+    annotated = annotated_videos_for_tasks(db, project.id, task_ids)
+    if not annotated:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No annotations with segments in the selected tasks",
+        )
+    try:
+        ft_name = (
+            validate_fine_tune_name(name)
+            if name
+            else default_fine_tune_name(project.name)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    existing = db.scalar(
+        select(FineTune).where(FineTune.user_id == user.id, FineTune.name == ft_name)
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Fine-tune name already exists: {ft_name}",
+        )
+
+    row = FineTune(
+        user_id=user.id,
+        project_id=project.id,
+        name=ft_name,
+        display_name=default_display_name(project.name, ft_name),
+        status=FineTuneStatus.QUEUED,
+        s3_prefix="",
+        task_ids=[str(t) for t in task_ids],
+    )
+    db.add(row)
+    db.flush()
+    row.s3_prefix = fine_tune_s3_prefix(str(user.id), str(row.id))
+    db.commit()
+    db.refresh(row)
+    enqueue_finetune(str(row.id))
+    return row
+
+
+def cancel_fine_tune(db: Session, fine_tune: FineTune) -> FineTune:
+    if fine_tune.status not in {FineTuneStatus.QUEUED, FineTuneStatus.PROCESSING}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot cancel fine-tune in status {fine_tune.status.value}",
+        )
+    fine_tune.status = FineTuneStatus.FAILED
+    fine_tune.error_msg = "Cancelled by user"
+    db.commit()
+    db.refresh(fine_tune)
+    return fine_tune
+
+
+def fine_tune_dataset(db: Session, fine_tune: FineTune) -> dict:
+    task_ids = [t for t in (fine_tune.task_ids or [])]
+    project_id = fine_tune.project_id
+    videos_out: list[dict] = []
+    if project_id is not None and task_ids:
+        for video, ann in annotated_videos_for_tasks(db, project_id, task_ids):
+            data = ann.data if isinstance(ann.data, dict) else {}
+            videos_out.append(
+                {
+                    "video_id": str(video.id),
+                    "s3_key": video.s3_key,
+                    "duration": video.duration,
+                    "segments": data.get("segments") or [],
+                }
+            )
+    return {
+        "id": str(fine_tune.id),
+        "name": fine_tune.name,
+        "project_id": str(project_id) if project_id else "",
+        "s3_prefix": fine_tune.s3_prefix,
+        "task_ids": [str(t) for t in task_ids],
+        "videos": videos_out,
+    }

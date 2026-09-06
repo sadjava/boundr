@@ -27,6 +27,10 @@ def enqueue_job(
     )
 
 
+def enqueue_finetune(job_id: str) -> None:
+    get_redis().xadd(settings.redis_finetune_stream, {"job_id": job_id})
+
+
 def flush_queue() -> int:
     """Drop pending and never-delivered jobs. The consumer group stays intact."""
     r = get_redis()

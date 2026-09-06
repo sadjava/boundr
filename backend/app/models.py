@@ -36,6 +36,13 @@ class AnnotationStatus(str, enum.Enum):
     EDITED = "EDITED"
 
 
+class FineTuneStatus(str, enum.Enum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -46,6 +53,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     projects: Mapped[list[Project]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    fine_tunes: Mapped[list[FineTune]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Project(Base):
@@ -67,6 +77,7 @@ class Project(Base):
     user: Mapped[User] = relationship(back_populates="projects")
     tasks: Mapped[list[Task]] = relationship(back_populates="project", cascade="all, delete-orphan")
     videos: Mapped[list[Video]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    fine_tunes: Mapped[list[FineTune]] = relationship(back_populates="project")
 
 
 class Task(Base):
@@ -176,3 +187,36 @@ class Inference(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     video: Mapped[Video] = relationship(back_populates="inferences")
+
+
+class FineTune(Base):
+    __tablename__ = "fine_tunes"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_fine_tunes_user_name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(32))
+    display_name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[FineTuneStatus] = mapped_column(
+        Enum(FineTuneStatus, name="fine_tune_status"), default=FineTuneStatus.QUEUED
+    )
+    error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
+    s3_prefix: Mapped[str] = mapped_column(String(512))
+    task_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    manifest: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    user: Mapped[User] = relationship(back_populates="fine_tunes")
+    project: Mapped[Project | None] = relationship(back_populates="fine_tunes")

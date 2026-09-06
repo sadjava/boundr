@@ -11,7 +11,7 @@ from app.s3 import (
     presigned_get_url,
     presigned_put_url,
 )
-from app.schemas import INFERENCE_TYPES, JobOut, ProcessIn, VideoCreate, VideoOut
+from app.schemas import JobOut, ProcessIn, VideoCreate, VideoOut
 from app.security import get_current_user
 from app.services import (
     create_and_enqueue_job,
@@ -19,7 +19,9 @@ from app.services import (
     first_or_create_task,
     get_project_for_user,
     get_video_for_user,
+    known_pipeline_ids,
     latest_job,
+    list_inference_for_user,
     neighbor_ids,
 )
 
@@ -139,8 +141,11 @@ def mark_uploaded(
 
 
 @router.get("/api/inference")
-def list_inference() -> list[dict]:
-    return INFERENCE_TYPES
+def list_inference(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    return list_inference_for_user(db, user)
 
 
 @router.post("/api/videos/{video_id}/process", response_model=JobOut)
@@ -157,8 +162,7 @@ def process_video(
             detail="Video has not finished uploading",
         )
     pipeline = (body.pipeline if body else "marlin") or "marlin"
-    known = {item["id"] for item in INFERENCE_TYPES}
-    if pipeline not in known:
+    if pipeline not in known_pipeline_ids(db, user):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown inference type: {pipeline}",

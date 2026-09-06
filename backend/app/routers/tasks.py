@@ -18,7 +18,6 @@ from app.routers.videos import _to_video_out
 from app.s3 import annotation_s3_key, delete_object, get_bytes, put_bytes
 from app.schemas import (
     AnnotationData,
-    INFERENCE_TYPES,
     ProcessIn,
     ProcessTaskOut,
     TaskCreate,
@@ -29,11 +28,13 @@ from app.schemas import (
 )
 from app.security import get_current_user
 from app.services import (
+    annotated_counts_by_task,
     apply_user_annotation,
     create_and_enqueue_job,
     create_video_row,
     get_project_for_user,
     get_task_for_user,
+    known_pipeline_ids,
 )
 
 router = APIRouter(tags=["tasks"])
@@ -47,9 +48,22 @@ _VIDEO_CT = {
 }
 
 
+def _annotated_count_for_task(db: Session, task_id) -> int:
+    rows = db.execute(
+        select(Annotation.data)
+        .join(Video, Video.id == Annotation.video_id)
+        .where(Video.task_id == task_id)
+    ).all()
+    n = 0
+    for (data,) in rows:
+        if isinstance(data, dict) and isinstance(data.get("segments"), list) and data["segments"]:
+            n += 1
+    return n
+
+
 def _task_out(db: Session, task: Task) -> TaskOut:
     n = db.scalar(select(func.count()).select_from(Video).where(Video.task_id == task.id)) or 0
-    return TaskOut.from_task(task, n)
+    return TaskOut.from_task(task, n, _annotated_count_for_task(db, task.id))
 
 
 def _counts(db: Session, project_id) -> dict:
@@ -183,7 +197,10 @@ def list_tasks(
         db.scalars(select(Task).where(Task.project_id == project.id).order_by(Task.created_at.asc()))
     )
     counts = _counts(db, project.id)
-    return [TaskOut.from_task(t, counts.get(t.id, 0)) for t in tasks]
+    annotated = annotated_counts_by_task(db, project.id)
+    return [
+        TaskOut.from_task(t, counts.get(t.id, 0), annotated.get(t.id, 0)) for t in tasks
+    ]
 
 
 @router.post(
@@ -401,8 +418,7 @@ def process_task(
 ) -> ProcessTaskOut:
     task = get_task_for_user(db, task_id, user)
     pipeline = (body.pipeline if body else "marlin") or "marlin"
-    known = {item["id"] for item in INFERENCE_TYPES}
-    if pipeline not in known:
+    if pipeline not in known_pipeline_ids(db, user):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown inference type: {pipeline}",

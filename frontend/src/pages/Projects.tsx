@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, downloadProjectExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
@@ -12,6 +12,7 @@ function fmt(iso: string) {
 }
 
 export default function Projects() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>({ field: "created", dir: "desc" });
@@ -93,16 +94,23 @@ export default function Projects() {
         {visible.map((p) => (
           <div
             key={p.id}
-            className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-4"
+            role="link"
+            tabIndex={0}
+            className="flex cursor-pointer items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-4"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("button, input")) return;
+              navigate(`/projects/${p.id}`);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              if ((e.target as HTMLElement).closest("button, input")) return;
+              e.preventDefault();
+              navigate(`/projects/${p.id}`);
+            }}
           >
             <div className="min-w-0 flex-1">
               <InlineRename value={p.name} onSave={(name) => renameProject(p, name)}>
-                <Link
-                  to={`/projects/${p.id}`}
-                  className="min-w-0 truncate font-medium text-[var(--color-text)] no-underline"
-                >
-                  {p.name}
-                </Link>
+                <span className="min-w-0 truncate font-medium">{p.name}</span>
               </InlineRename>
               {p.description && (
                 <div className="mt-1 text-sm text-[var(--color-muted)]">{p.description}</div>
@@ -113,7 +121,8 @@ export default function Projects() {
             </div>
             <button
               className="btn btn-ghost"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setIncludeVideos(false);
                 setFormats({ json: true, csv: false });
                 setExportingProject(p);
@@ -121,7 +130,13 @@ export default function Projects() {
             >
               Export
             </button>
-            <button className="btn btn-danger" onClick={() => setPending(p)}>
+            <button
+              className="btn btn-danger"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPending(p);
+              }}
+            >
               Delete
             </button>
           </div>

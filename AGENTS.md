@@ -22,9 +22,9 @@ docker compose logs -f ml-service          # follow a service
 ```
 
 **`restart` does not apply code edits.** No service bind-mounts its source: `backend`,
-`ml-service` and `frontend` all have a bare `build:`, so the code is copied into the
-image at build time. `docker compose restart` brings the container back up from the
-*old* image and your change silently does not run. Always rebuild:
+`ml-service`, `finetune-service` and `frontend` all have a bare `build:`, so the code is
+copied into the image at build time. `docker compose restart` brings the container back
+up from the *old* image and your change silently does not run. Always rebuild:
 
 ```bash
 docker compose up -d --build <service>
@@ -42,6 +42,7 @@ docker compose exec ml-service grep -c "<a string from your edit>" <path/inside/
 | Frontend | http://localhost:3000 |
 | API docs (Swagger) | http://localhost:8000/docs |
 | Marlin llama.cpp API | http://localhost:8085 |
+| Fine-tune service health | http://localhost:8002/health |
 | MinIO console | http://localhost:9001 |
 | Adminer | http://localhost:8080 |
 | Redis Commander | http://localhost:8081 |
@@ -74,10 +75,12 @@ invariants. Run them directly:
 ```bash
 docker compose exec backend python -m app.segment       # annotation coercion rules
 docker compose exec backend python -m app.labels        # vocabulary normalisation
+docker compose exec backend python -m app.finetune      # fine-tune name + S3 prefix
 docker compose exec ml-service python -m app.inference  # every registered pipeline
 docker compose exec ml-service python -m app.inference.marlin.infer
 docker compose exec ml-service python -m app.inference.marlin.postprocess
 docker compose exec ml-service python -m app.inference.marlin.gpt_postprocess
+docker compose exec finetune-service python -m app.manifest  # stub manifest shape
 ```
 
 Each prints `ok` on success. Follow this pattern for new pure-logic modules: no network,
@@ -133,7 +136,9 @@ several of them are load-bearing in non-obvious ways.
 5. **One video = one annotation task.** Do not introduce many-to-one relationships
    between videos and annotations.
 6. **No new infrastructure.** No Kafka, RabbitMQ, Celery or extra worker services. Redis
-   Streams with a consumer group is deliberate and sufficient.
+   Streams with a consumer group is deliberate and sufficient. Inference uses `ml-jobs`;
+   fine-tune uses a second stream `ml-finetune` consumed by `finetune-service` (same
+   pattern, not a new broker).
 
 ---
 
@@ -141,30 +146,37 @@ several of them are load-bearing in non-obvious ways.
 
 ```text
 backend/app/
-  main.py          FastAPI app, router registration
-  models.py        SQLAlchemy models — the schema source of truth
-  schemas.py       Pydantic request/response models
-  segment.py       AnnotationSegment: validates and repairs annotation data
-  labels.py        Vocabulary normalisation
-  services.py      Shared logic: ownership checks, upserts, job creation
-  queue.py         Redis Stream producer
-  s3.py            Key construction, presigned URLs, bucket lifecycle
-  security.py      bcrypt hashing, JWT issue/verify
-  routers/         auth, projects, videos, jobs, annotations, internal
-  alembic/         Migrations
+  main.py            FastAPI app, router registration
+  models.py          SQLAlchemy models — the schema source of truth
+  schemas.py         Pydantic request/response models
+  finetune.py        Fine-tune name validation / defaults
+  segment.py         AnnotationSegment: validates and repairs annotation data
+  labels.py          Vocabulary normalisation
+  services.py        Shared logic: ownership checks, upserts, job / fine-tune creation
+  queue.py           Redis Stream producers (ml-jobs, ml-finetune)
+  s3.py              Key construction, presigned URLs, bucket lifecycle
+  security.py        bcrypt hashing, JWT issue/verify
+  routers/           auth, projects, videos, tasks, jobs, annotations, fine_tunes, internal
+  alembic/           Migrations
 
 ml-service/app/
-  consumer.py      Redis consumer loop: download → run → upload → callback
-  inference/       Pipelines (see below)
-  project.py       Reads project vocabularies straight from PostgreSQL
+  consumer.py        Redis consumer loop: download → run → upload → callback
+  inference/         Pipelines (marlin_ft_* resolves to MarlinInference)
+  project.py         Reads project vocabularies straight from PostgreSQL
   backend_client.py  Status callbacks to the backend
-  s3.py            Download/upload, key derivation
+  s3.py              Download/upload, key derivation
+
+finetune-service/app/
+  consumer.py        Redis consumer on ml-finetune (mock: download + stub checkpoint)
+  backend_client.py  Dataset fetch + status callbacks
+  manifest.py        Stub training manifest
+  s3.py              Download videos / upload checkpoint artifacts
 
 frontend/src/
-  pages/           Login, Projects, ProjectCreate, ProjectDetail, VideoPage
-  components/      Timeline, RangeSlider, Layout, StatusBadge, ConfirmDialog
-  api.ts           Typed fetch wrapper, JWT handling, export download
-  types.ts         Shared types — keep in sync with backend/app/schemas.py
+  pages/             Login, Projects, ProjectCreate, ProjectDetail, TaskDetail, VideoPage
+  components/        Timeline, RangeSlider, Layout, StatusBadge, ConfirmDialog
+  api.ts             Typed fetch wrapper, JWT handling, export download
+  types.ts           Shared types — keep in sync with backend/app/schemas.py
 ```
 
 ---

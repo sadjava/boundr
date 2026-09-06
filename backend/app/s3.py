@@ -38,6 +38,11 @@ def annotation_s3_key(project_id: str, video_id: str) -> str:
     return f"projects/{project_id}/videos/{video_id}/annotation.json"
 
 
+def fine_tune_s3_prefix(user_id: str, fine_tune_id: str) -> str:
+    """Checkpoint prefix outside projects/ so project delete does not wipe weights."""
+    return f"users/{user_id}/models/{fine_tune_id}/"
+
+
 def presigned_put_url(key: str, content_type: str) -> str:
     return public_s3().generate_presigned_url(
         "put_object",

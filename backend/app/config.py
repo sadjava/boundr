@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_stream: str = "ml-jobs"
     redis_group: str = "ml-workers"
+    redis_finetune_stream: str = "ml-finetune"
+    redis_finetune_group: str = "ft-workers"
 
     jwt_secret: str = "change-me-in-prod"
     jwt_expire_minutes: int = 60 * 24 * 7

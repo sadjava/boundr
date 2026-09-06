@@ -61,13 +61,16 @@ export default function InlineRename({
         onBlur={() => {
           void commit();
         }}
+        onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
+            e.stopPropagation();
             void commit();
           }
           if (e.key === "Escape") {
             e.preventDefault();
+            e.stopPropagation();
             setDraft(value);
             setEditing(false);
           }

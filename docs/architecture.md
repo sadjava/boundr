@@ -28,20 +28,17 @@ Browser / UI
 Backend (FastAPI)
     |
     +---- PostgreSQL
-    |      users
-    |      projects
-    |      videos
-    |      jobs
-    |      annotations
+    |      users, projects, tasks, videos, jobs,
+    |      annotations, inferences, fine_tunes
     |
-    +---- Redis Stream
-    |      ML job queue
+    +---- Redis Streams
+    |      ml-jobs      → ml-service
+    |      ml-finetune  → finetune-service
     |
     +---- S3 / MinIO
-           original videos
-           annotation artifacts
+           videos, annotation artifacts, fine-tune checkpoints
 
-Redis Stream
+Redis Stream ml-jobs
     |
     v
 ML Service
@@ -55,6 +52,17 @@ ML Service
     +-- notify Backend
     |
     +-- Marlin llama.cpp server (local GPU)
+
+Redis Stream ml-finetune
+    |
+    v
+Fine-tune Service (mock)
+    |
+    +-- queue consumer
+    +-- fetch dataset (EDITED annotations) via internal API
+    +-- download videos from S3
+    +-- write stub checkpoint + manifest to S3
+    +-- notify Backend
 ```
 
 Docker Compose services:
@@ -63,13 +71,16 @@ Docker Compose services:
 frontend
 backend
 ml-service
+finetune-service
 marlin-server
 postgres
 redis
 minio
 ```
 
-No separate worker service. `ml-service` contains both HTTP API and Redis consumer.
+No separate worker containers beyond the two consumers. `ml-service` and
+`finetune-service` each contain an HTTP health endpoint and a Redis consumer.
+Real Unsloth training is not wired yet — `finetune-service` proves the data path.
 
 ---
 
@@ -81,9 +92,12 @@ Stores metadata/state only:
 
 * `users`
 * `projects`
+* `tasks`
 * `videos`
 * `jobs`
 * `annotations`
+* `inferences`
+* `fine_tunes`
 
 Annotation can be stored as `JSONB`.
 
@@ -94,6 +108,8 @@ Stores files:
 ```text
 projects/{project_id}/videos/{video_id}/original.mp4
 projects/{project_id}/videos/{video_id}/annotation.json
+users/{user_id}/models/{fine_tune_id}/manifest.json
+users/{user_id}/models/{fine_tune_id}/checkpoint.json
 ```
 
 Video must NOT pass through Backend.
@@ -216,12 +232,37 @@ DELETE /api/videos/{video_id}
 POST /api/videos/{video_id}/process
 POST /api/jobs/purge
 GET  /api/jobs/{job_id}
+GET  /api/inference
 ```
+
+`GET /api/inference` requires a JWT and returns the static pipeline list plus the
+caller's `COMPLETED` fine-tunes (ids like `marlin_ft_*`).
 
 `POST /api/jobs/purge` marks every `QUEUED`/`PROCESSING` job as failed, restores the
 video to `UPLOADED` or `COMPLETED` (if an annotation already exists), and trims the
 Redis stream so those messages are not consumed. A consumer that is already inside
 `infer()` is not killed; its later callback is ignored so it cannot overwrite a new run.
+
+### Fine-tunes
+
+```text
+POST /api/projects/{project_id}/fine-tunes
+GET  /api/projects/{project_id}/fine-tunes
+GET  /api/fine-tunes/{fine_tune_id}
+```
+
+Creates a `fine_tunes` row (`QUEUED`), enqueues `{job_id}` on Redis stream `ml-finetune`,
+and returns immediately. Videos from the selected tasks that have an annotation with
+non-empty `segments` are used (GENERATED or EDITED). Default pipeline id is
+`marlin_ft_{project}_{YYYYMMDD}_{hex}` (≤32 chars). Also:
+
+```text
+POST /api/fine-tunes/{id}/cancel    # QUEUED|PROCESSING → FAILED (owner only)
+```
+
+Cancel is cooperative: the consumer checks status after `PROCESSING` and skips if the
+job was cancelled; a later `complete`/`fail` callback cannot overwrite a cancelled row.
+To run again, start a new fine-tune from the project page.
 
 ### Annotation
 
@@ -243,6 +284,10 @@ GET /api/videos/{video_id}/export?format=csv
 POST /api/internal/jobs/{job_id}/status
 POST /api/internal/jobs/{job_id}/complete
 POST /api/internal/jobs/{job_id}/fail
+GET  /api/internal/fine-tunes/{id}/dataset
+POST /api/internal/fine-tunes/{id}/status
+POST /api/internal/fine-tunes/{id}/complete
+POST /api/internal/fine-tunes/{id}/fail
 ```
 
 ---
@@ -259,6 +304,17 @@ GET  /health
 `POST /jobs` does NOT run inference synchronously. It only adds a job to Redis and returns `202 Accepted`.
 
 Actual processing happens in the Redis consumer inside the same `ml-service` container.
+
+### Fine-tune service (mock)
+
+```text
+GET /health
+```
+
+Consumes `ml-finetune`, downloads each dataset video from S3, uploads a stub
+`manifest.json` + `checkpoint.json` under `users/{user_id}/models/{id}/`, and
+callbacks the backend. No Unsloth / GGUF yet. Selecting a completed `marlin_ft_*`
+pipeline still runs stock Marlin via llama.cpp.
 
 ### Marlin pipeline
 

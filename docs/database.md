@@ -14,7 +14,11 @@ disagree, the code is right and this document is stale.
 ```mermaid
 erDiagram
     users ||--o{ projects : "user_id"
+    users ||--o{ fine_tunes : "user_id"
+    projects ||--o{ tasks : "project_id"
     projects ||--o{ videos : "project_id"
+    projects ||--o{ fine_tunes : "project_id"
+    tasks ||--o{ videos : "task_id"
     videos ||--o{ jobs : "video_id"
     videos ||--o{ inferences : "video_id"
     videos ||--o| annotations : "video_id"
@@ -38,9 +42,18 @@ erDiagram
         timestamptz updated_at "on update"
     }
 
+    tasks {
+        uuid id PK
+        uuid project_id FK "indexed, ON DELETE CASCADE"
+        varchar-255 name
+        timestamptz created_at
+        timestamptz updated_at "on update"
+    }
+
     videos {
         uuid id PK
         uuid project_id FK "indexed, ON DELETE CASCADE"
+        uuid task_id FK "indexed, ON DELETE CASCADE"
         varchar-255 name
         varchar-512 s3_key
         video_status status "default UPLOADING"
@@ -79,6 +92,22 @@ erDiagram
         varchar-512 s3_key "nullable"
         jsonb data "default {}"
         timestamptz created_at
+    }
+
+    fine_tunes {
+        uuid id PK
+        uuid user_id FK "indexed, ON DELETE CASCADE"
+        uuid project_id FK "indexed, ON DELETE SET NULL, nullable"
+        varchar-32 name "UNIQUE with user_id"
+        varchar-255 display_name
+        fine_tune_status status "default QUEUED"
+        text error_msg "nullable"
+        varchar-512 s3_prefix
+        jsonb task_ids "default []"
+        jsonb manifest "nullable"
+        timestamptz created_at
+        timestamptz started_at "nullable"
+        timestamptz updated_at "on update"
     }
 ```
 
@@ -202,6 +231,30 @@ place. Bumping a pipeline's version and re-running destroys the previous result.
 If comparing versions of one pipeline becomes necessary, the fix is to widen the unique
 constraint to `(video_id, pipeline, model_version)` and look rows up by all three.
 
+### `fine_tunes`
+
+Domain Marlin fine-tune jobs. One row per training run; `name` is the pipeline id that
+appears in the Model menu after `COMPLETED`.
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `uuid` | PK | Also the Redis `ml-finetune` message `job_id` |
+| `user_id` | `uuid` | FK → `users.id` ON DELETE CASCADE, indexed | ACL owner |
+| `project_id` | `uuid` | FK → `projects.id` ON DELETE SET NULL, nullable, indexed | Source project; survives project delete |
+| `name` | `varchar(32)` | UNIQUE with `user_id` | e.g. `marlin_ft_a3f21c` |
+| `display_name` | `varchar(255)` | NOT NULL | Shown in the picker |
+| `status` | `fine_tune_status` | NOT NULL, default `QUEUED` | |
+| `error_msg` | `text` | nullable | Traceback on failure |
+| `s3_prefix` | `varchar(512)` | NOT NULL | `users/{user_id}/models/{id}/` |
+| `task_ids` | `jsonb` | NOT NULL, default `'[]'` | Snapshot of selected task UUIDs |
+| `manifest` | `jsonb` | nullable | Filled on complete (videos, sizes, `mocked`) |
+| `created_at` | `timestamptz` | NOT NULL | |
+| `started_at` | `timestamptz` | nullable | Set when consumer marks `PROCESSING` |
+| `updated_at` | `timestamptz` | NOT NULL, `onupdate` | |
+
+GT for training is assembled from `annotations` with non-empty `segments` (any status) —
+never from S3 `annotation.json` (raw model output artifact).
+
 ---
 
 ## Enum types
@@ -213,6 +266,7 @@ Created as native PostgreSQL enums.
 | `video_status` | `UPLOADING`, `UPLOADED`, `QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED` | `videos.status` |
 | `job_status` | `QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED` | `jobs.status` |
 | `annotation_status` | `GENERATED`, `EDITED` | `annotations.status` |
+| `fine_tune_status` | `QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED` | `fine_tunes.status` |
 
 `videos.status` mirrors the state of the latest job plus the two upload states that
 precede any job. Adding a value to any of these enums requires a migration
@@ -233,6 +287,9 @@ precede any job. Adding a value to any of these enums requires a migration
 | `ix_inferences_video_id` | `inferences` | on `video_id` | |
 | `uq_annotations_video_id` | `annotations` | UNIQUE `(video_id)` | One working annotation per video |
 | `uq_inferences_video_pipeline` | `inferences` | UNIQUE `(video_id, pipeline)` | One stored result per pipeline |
+| `ix_fine_tunes_user_id` | `fine_tunes` | on `user_id` | List / ACL |
+| `ix_fine_tunes_project_id` | `fine_tunes` | on `project_id` | Project history |
+| `uq_fine_tunes_user_name` | `fine_tunes` | UNIQUE `(user_id, name)` | Pipeline id unique per user |
 
 Every foreign key carries `ON DELETE CASCADE`, so deleting a user removes the entire
 subtree. SQLAlchemy relationships also declare `cascade="all, delete-orphan"`, meaning
@@ -248,6 +305,8 @@ deletion works whether it goes through the ORM or straight SQL.
 | `002_project_catalogs` | Adds `projects.action_types` and `projects.objects` (JSONB, default `'[]'`) |
 | `003_inferences` | Adds `jobs.pipeline` (default `overlap`); creates `inferences` with its unique constraint and index |
 | `004_inference_version` | Adds `inferences.model_version` (default 1) |
+| `005_tasks` | Adds `tasks`; `videos.task_id` |
+| `006_fine_tunes` | Adds `fine_tune_status` enum and `fine_tunes` table |
 
 Migrations run automatically on backend startup (`alembic upgrade head` in the container
 `CMD`). To run them by hand:

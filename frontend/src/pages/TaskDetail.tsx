@@ -231,9 +231,9 @@ export default function TaskDetail() {
         <label className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
           Model
           <select
-            className="field mt-0 min-w-[13.5rem]"
+            className="field mt-0 min-w-[16rem]"
             value={pipeline}
-            disabled={running || ready.length === 0}
+            disabled={running || busy || ready.length === 0}
             onChange={(e) => setPipeline(e.target.value)}
             title={inference.find((m) => m.id === pipeline)?.description}
           >
@@ -244,16 +244,13 @@ export default function TaskDetail() {
             ))}
           </select>
         </label>
-        <button
-          className="btn btn-primary"
-          disabled={running || purging || ready.length === 0}
-          onClick={runAll}
-        >
-          {busy ? "Running…" : running ? "Starting…" : "Run all videos"}
-        </button>
-        <button className="btn btn-danger" disabled={purging} onClick={stopQueue}>
-          {purging ? "Stopping…" : "Stop queue"}
-        </button>
+          <button
+            className={busy ? "btn btn-danger" : "btn btn-primary"}
+            disabled={purging || (!busy && (running || ready.length === 0))}
+            onClick={busy ? stopQueue : runAll}
+          >
+            {purging ? "Stopping…" : busy ? "Stop queue" : running ? "Starting…" : "Run all videos"}
+          </button>
       </div>
 
       <h2 className="mt-0 mb-3 text-lg font-semibold">Videos</h2>

@@ -27,6 +27,10 @@ PIPELINES: dict[str, type[Inference]] = {
 
 
 def get_pipeline(name: str) -> Inference:
+    # Fine-tuned checkpoints reuse MarlinInference; llama.cpp still serves stock marlin-2b
+    # until real GGUF loading is wired.
+    if name.startswith("marlin_ft_"):
+        return MarlinInference()
     cls = PIPELINES.get(name)
     if cls is None:
         raise ValueError(f"Unknown pipeline: {name}")
@@ -90,4 +94,5 @@ if __name__ == "__main__":
     assert DenseInference.version == 2
     assert MarlinInference.version == 7
     assert MarlinGptInference.version == 2
+    assert isinstance(get_pipeline("marlin_ft_abc123"), MarlinInference)
     print("ok")

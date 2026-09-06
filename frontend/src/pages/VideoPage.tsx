@@ -410,9 +410,9 @@ export default function VideoPage() {
           <label className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
             Model
             <select
-              className="field mt-0 min-w-[13.5rem]"
+              className="field mt-0 min-w-[16rem]"
               value={pipeline}
-              disabled={!canRun || running}
+              disabled={!canRun || running || busy}
               onChange={(e) => setPipeline(e.target.value)}
               title={inference.find((m) => m.id === pipeline)?.description}
             >
@@ -423,11 +423,12 @@ export default function VideoPage() {
               ))}
             </select>
           </label>
-          <button className="btn btn-primary" disabled={!canRun || running || purging} onClick={runModel}>
-            {busy ? `Running ${runningName}…` : running ? "Starting…" : "Run model"}
-          </button>
-          <button className="btn btn-danger" disabled={purging} onClick={stopQueue}>
-            {purging ? "Stopping…" : "Stop queue"}
+          <button
+            className={busy ? "btn btn-danger" : "btn btn-primary"}
+            disabled={purging || (!busy && (!canRun || running))}
+            onClick={busy ? stopQueue : runModel}
+          >
+            {purging ? "Stopping…" : busy ? "Stop queue" : running ? "Starting…" : "Run model"}
           </button>
           <button className="btn btn-ghost" disabled={saving || !data} onClick={save}>
             {saving ? "Saving…" : "Save"}

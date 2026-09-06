@@ -10,28 +10,39 @@ Source of truth: [`backend/app/s3.py`](../backend/app/s3.py) and
 
 ## Key layout
 
-A single bucket (`boundr` by default, `S3_BUCKET` in `.env`) with one prefix per project:
+A single bucket (`boundr` by default, `S3_BUCKET` in `.env`):
 
 ```text
 boundr/                                          ← bucket
-└── projects/
-    └── {project_id}/                            ← project UUID
-        └── videos/
-            └── {video_id}/                      ← video UUID
-                ├── original.mp4                 ← uploaded source video
-                └── annotation.json              ← latest pipeline output
+├── projects/
+│   └── {project_id}/                            ← project UUID
+│       └── videos/
+│           └── {video_id}/                      ← video UUID
+│               ├── original.mp4                 ← uploaded source video
+│               └── annotation.json              ← latest pipeline output
+└── users/
+    └── {user_id}/
+        └── models/
+            └── {fine_tune_id}/
+                ├── manifest.json                ← training set snapshot
+                └── checkpoint.json              ← stub (mock); later GGUF
 ```
 
-Keys are built by two functions and nowhere else:
+Keys are built by helpers and nowhere else:
 
 ```python
-video_s3_key(project_id, video_id)      # projects/{p}/videos/{v}/original.mp4
-annotation_s3_key(project_id, video_id) # projects/{p}/videos/{v}/annotation.json
+video_s3_key(project_id, video_id)           # projects/{p}/videos/{v}/original.mp4
+annotation_s3_key(project_id, video_id)      # projects/{p}/videos/{v}/annotation.json
+fine_tune_s3_prefix(user_id, fine_tune_id)   # users/{u}/models/{ft}/
 ```
+
+Fine-tune checkpoints live **outside** `projects/{id}/` so deleting a project
+(`delete_prefix("projects/{id}/")`) does not wipe trained weights. Ownership is
+enforced in the app layer (JWT / user_id), not MinIO IAM.
 
 The ML service does not know about project ids. It derives the annotation key from the
 video key it received in the job message by swapping the last path segment
-(`annotation_key_from_video_key`). Keeping the layout hierarchical is what makes that
+(`annotation_key_from_video_key`). Keeping the video layout hierarchical is what makes that
 possible — and what makes deleting a project a single prefix delete.
 
 ---
