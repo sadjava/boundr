@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { activeSegmentId } from "../activeSegment";
+import { activeSegmentId, splitSegmentAt } from "../activeSegment";
 import { api, downloadExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import StatusBadge from "../components/StatusBadge";
@@ -182,6 +182,12 @@ export default function VideoPage() {
         } else selectAdjacent(1);
         return;
       }
+      if (e.key === "s" || e.key === "S") {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        e.preventDefault();
+        splitSelected();
+        return;
+      }
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         const id = selectedIdRef.current;
@@ -234,6 +240,15 @@ export default function VideoPage() {
     const next = cur.segments.filter((s) => s.id !== sid);
     setData({ ...cur, segments: next });
     setSelectedId((prev) => (prev === sid ? (next[0]?.id ?? null) : prev));
+  }
+
+  function splitSelected() {
+    const cur = dataRef.current;
+    const id = selectedIdRef.current;
+    if (!cur || !id) return;
+    const next = splitSegmentAt(cur.segments, id, currentTimeRef.current);
+    if (!next) return;
+    setData({ ...cur, segments: next });
   }
 
   function reorder(fromId: string, toIndex: number) {
@@ -532,6 +547,7 @@ export default function VideoPage() {
                     onSelect={setSelectedId}
                     onSeek={seek}
                     onAdd={addSegment}
+                    onSplit={splitSelected}
                     onRemove={removeSegment}
                     onReorder={reorder}
                     onMeta={(sid, patch) => updateSegment(sid, patch)}

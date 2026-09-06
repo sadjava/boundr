@@ -4,7 +4,7 @@ import { api, downloadProjectExport, downloadTaskExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
 import InlineRename from "../components/InlineRename";
-import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
+import ListToolbar, { sortItems, type SortState } from "../components/ListToolbar";
 import type { FineTune, Project, Task } from "../types";
 
 export default function ProjectDetail() {
@@ -70,7 +70,7 @@ export default function ProjectDetail() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q ? tasks.filter((t) => t.name.toLowerCase().includes(q)) : tasks;
-    return sortByDates(filtered, sort);
+    return sortItems(filtered, sort);
   }, [tasks, query, sort]);
 
   const selectedTasks = useMemo(

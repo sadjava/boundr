@@ -4,7 +4,7 @@ import { api, downloadProjectExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
 import InlineRename from "../components/InlineRename";
-import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
+import ListToolbar, { sortItems, type SortState } from "../components/ListToolbar";
 import type { Project } from "../types";
 
 function fmt(iso: string) {
@@ -40,7 +40,7 @@ export default function Projects() {
             p.name.toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q),
         )
       : projects;
-    return sortByDates(filtered, sort);
+    return sortItems(filtered, sort);
   }, [projects, query, sort]);
 
   async function remove() {

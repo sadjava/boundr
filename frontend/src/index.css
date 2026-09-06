@@ -4,19 +4,19 @@
 @theme {
   --font-sans: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --color-ink: #f1e2d1;
-  --color-panel: #f8efe4;
-  --color-raised: #ead9c2;
+  --color-ink: #faf6f0;
+  --color-panel: #fffcfa;
+  --color-raised: #f3e8da;
   --color-canvas: #2b1512;
-  --color-line: #dcc3aa;
-  --color-line-strong: #c7a98a;
+  --color-line: #e6d5c4;
+  --color-line-strong: #d2bda6;
   --color-text: #541a1a;
   --color-muted: #86604f;
   --color-tertiary: #b49984;
   --color-accent: #810b38;
   --color-accent-2: #9e1345;
   --color-accent-active: #690930;
-  --color-on-accent: #f8efe4;
+  --color-on-accent: #fffcfa;
   --color-ok: #2f5233;
   --color-warn: #b8860b;
   --color-bad: #b3261e;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { playheadInside } from "../activeSegment";
 import { type AnnotationSegment } from "../types";
 import RangeSlider from "./RangeSlider";
 
@@ -175,6 +176,7 @@ interface Props {
   onChange: (id: string, start: number, end: number, keyframe: number) => void;
   onMeta: (id: string, patch: { action?: string; object?: string | null }) => void;
   onAdd: () => void;
+  onSplit: () => void;
   onRemove: (id: string) => void;
   onReorder?: (id: string, toIndex: number) => void;
   onDragStart?: () => void;
@@ -191,6 +193,7 @@ export default function Timeline({
   onChange,
   onMeta,
   onAdd,
+  onSplit,
   onRemove,
   onReorder,
   onDragStart,
@@ -533,14 +536,25 @@ export default function Timeline({
           </span>
         </div>
       )}
-      <button
-        type="button"
-        className="btn btn-ghost mt-2 w-full shrink-0 py-1.5 text-sm"
-        disabled={duration <= 0}
-        onClick={onAdd}
-      >
-        + Add action
-      </button>
+      <div className="mt-2 flex shrink-0 gap-2">
+        <button
+          type="button"
+          className="btn btn-ghost flex-1 py-1.5 text-sm"
+          disabled={duration <= 0}
+          onClick={onAdd}
+        >
+          + Add action
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost py-1.5 text-sm"
+          disabled={!segments.some((s) => s.id === selectedId && playheadInside(s, currentTime))}
+          title="Split selected action at playhead (S)"
+          onClick={onSplit}
+        >
+          Split
+        </button>
+      </div>
     </div>
   );
 }

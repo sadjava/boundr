@@ -4,7 +4,7 @@ import { api, downloadTaskExport } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ExportDialog, { type ExportFormats } from "../components/ExportDialog";
 import InlineRename from "../components/InlineRename";
-import ListToolbar, { sortByDates, type SortState } from "../components/ListToolbar";
+import ListToolbar, { sortItems, type SortState } from "../components/ListToolbar";
 import StatusBadge from "../components/StatusBadge";
 import { INFERENCE_TYPES, type InferenceType, type Project, type Task, type Video } from "../types";
 
@@ -61,7 +61,7 @@ export default function TaskDetail() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q ? videos.filter((v) => v.name.toLowerCase().includes(q)) : videos;
-    return sortByDates(filtered, sort);
+    return sortItems(filtered, sort);
   }, [videos, query, sort]);
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {

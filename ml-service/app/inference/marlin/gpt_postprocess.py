@@ -9,7 +9,7 @@ import urllib.request
 from app.config import get_settings
 from app.inference.base import JobContext, make_segment
 
-MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+MODEL = "openai/gpt-4o-mini"
 TIMEOUT = 120
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 

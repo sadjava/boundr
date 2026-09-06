@@ -1,7 +1,7 @@
 # Design Spec — Boundr Labeling Tool (v2: warm light theme)
 
 Rebuilt around your four colors — wine maroon `#810B38`, dark maroon-brown
-`#541A1A`, tan/beige `#DCC3AA`, cream `#F1E2D1` — as a light, warm,
+`#541A1A`, tan/beige `#E6D5C4`, cream `#FAF6F0` — as a light, warm,
 Christmas-adjacent palette. Four colors aren't enough for a full system
 (no hover states, no way to separate "destructive" from "brand," no way to
 tell seven action types apart on the timeline), so I derived tints/shades
@@ -12,15 +12,15 @@ required. Every addition is called out below.
 
 ## 1. Color
 
-### Surfaces (light, warm — no gray, no white)
+### Surfaces (light, warm cream — near-white, not gray)
 | Token | Hex | Source | Use |
 |---|---|---|---|
-| `bg-app` | `#F1E2D1` | **your cream** | Outermost background |
-| `bg-panel` | `#F8EFE4` | tint of cream | Top bar, side panel, timeline panel — sits slightly lighter than `bg-app` so panels read as raised, without a drop shadow |
-| `bg-panel-raised` | `#EAD9C2` | between cream/tan | Row hover, dropdown open state, input fields |
+| `bg-app` | `#FAF6F0` | **your cream, lifted toward white** | Outermost background |
+| `bg-panel` | `#FFFCFA` | near-white cream | Top bar, side panel, timeline panel — sits slightly lighter than `bg-app` so panels read as raised, without a drop shadow |
+| `bg-panel-raised` | `#F3E8DA` | between cream/tan | Row hover, dropdown open state, input fields |
 | `bg-canvas-well` | `#2B1512` | new — near-black warm brown | Video preview surround only (see note) |
-| `border-hairline` | `#DCC3AA` | **your tan** | 1px dividers between panels/rows |
-| `border-strong` | `#C7A98A` | darkened tan | Input borders, unfocused control outlines |
+| `border-hairline` | `#E6D5C4` | **your tan, lightened** | 1px dividers between panels/rows |
+| `border-strong` | `#D2BDA6` | darkened tan | Input borders, unfocused control outlines |
 
 **Note on the canvas well:** the video preview frame stays dark even though
 the rest of the UI is light. This isn't inconsistency — it's standard
@@ -43,7 +43,7 @@ hole punched in a warm page — it reads as a stage the video sits on.
 | `accent-primary` | `#810B38` | **your wine maroon** | Primary button fill (Run model), focus rings, playhead, selection outline |
 | `accent-primary-hover` | `#9E1345` | lightened | Hover |
 | `accent-primary-active` | `#690930` | darkened | Pressed |
-| Text on accent fill | `#F8EFE4` | cream tint | Always cream text on a wine-filled button, never white |
+| Text on accent fill | `#FFFCFA` | cream tint | Always cream text on a wine-filled button, never cool white |
 
 ### Semantic status — reserved, never reused elsewhere
 | Token | Hex | Use |
@@ -106,7 +106,7 @@ Unchanged from before — this part isn't a color decision:
 
 ### Buttons
 Flat, 4px radius, no shadow, no gradient.
-- **Primary** (Run model): `accent-primary` fill, `#F8EFE4` text. Hover →
+- **Primary** (Run model): `accent-primary` fill, `#FFFCFA` text. Hover →
   `accent-primary-hover`.
 - **Secondary** (Previous, Next, Save): transparent, 1px `border-strong`,
   `text-primary` label. Hover → `bg-panel-raised` fill.
@@ -164,7 +164,7 @@ load-in animation, scrubber thumb grows only on interaction. Respect
 
 ## 5. Accessibility
 
-- `text-primary` (`#541A1A`) on `bg-app` (`#F1E2D1`) is ~9:1 contrast — well
+- `text-primary` (`#541A1A`) on `bg-app` (`#FAF6F0`) is ~9:1 contrast — well
   above the 4.5:1 floor.
 - `text-tertiary` (`#B49984`) on `bg-app` is the tightest pair in the
   system — verify it in your actual renderer at the sizes you use it
